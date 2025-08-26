@@ -172,6 +172,8 @@ deepseek-ai/DeepSeek-R1:
   - quant_algo: FP8_BLOCK_SCALES
     kv_cache_quant_algo: FP8
     accuracy: 87.573
+Barrrrry/DeepSeek-R1-W4AFP8:
+  - accuracy: 87.33
 Qwen3/Qwen3-8B:
   - quant_algo: W4A8_MXFP4_FP8
     accuracy: 72.70

@@ -1633,6 +1633,23 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
             task.evaluate(llm)
 
 
+class TestDeepSeekR1W4AFP8(LlmapiAccuracyTestHarness):
+    MODEL_NAME = "Barrrrry/DeepSeek-R1-W4AFP8"
+    MODEL_PATH = f"{llm_models_root()}/DeepSeek-R1/DeepSeek-R1-W4AFP8"
+
+    @skip_pre_ada
+    @pytest.mark.skip_less_device_memory(90000)
+    def test_auto_dtype(self):
+        kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
+        with LLM(self.MODEL_PATH,
+                 kv_cache_config=kv_cache_config,
+                 max_batch_size=1) as llm:
+            task = MMLU(self.MODEL_NAME)
+            task.evaluate(llm)
+            task = GSM8K(self.MODEL_NAME)
+            task.evaluate(llm)
+
+
 @pytest.mark.timeout(7200)
 @pytest.mark.skip_less_device_memory(80000)
 class TestDeepSeekR1(LlmapiAccuracyTestHarness):
@@ -2602,6 +2619,20 @@ class TestPhi4MiniInstruct(LlmapiAccuracyTestHarness):
             task = MMLU(self.MODEL_NAME)
             task.evaluate(llm)
             task = GSM8K(self.MODEL_NAME)
+            task.evaluate(llm)
+
+
+class TestStarCoder2_7B(LlmapiAccuracyTestHarness):
+    MODEL_NAME = "bigcode/starcoder2-7b"
+    MODEL_PATH = f"{llm_models_root()}/starcoder2-7b"
+    kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.6)
+
+    @pytest.mark.skip_less_device_memory(70000)
+    def test_auto_dtype(self):
+        with LLM(self.MODEL_PATH, kv_cache_config=self.kv_cache_config) as llm:
+            task = CnnDailymail(self.MODEL_NAME)
+            task.evaluate(llm)
+            task = MMLU(self.MODEL_NAME)
             task.evaluate(llm)
 
 
