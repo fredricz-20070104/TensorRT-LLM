@@ -1638,7 +1638,7 @@ class TestDeepSeekR1W4AFP8(LlmapiAccuracyTestHarness):
     MODEL_PATH = f"{llm_models_root()}/DeepSeek-R1/DeepSeek-R1-W4AFP8"
 
     @skip_pre_hopper
-    @pytest.mark.skip_less_device_memory(90000)
+    @pytest.mark.skip_less_device_memory(80000)
     def test_auto_dtype(self):
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
         with LLM(self.MODEL_PATH,
