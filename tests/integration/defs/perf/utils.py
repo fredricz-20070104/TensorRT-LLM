@@ -18,12 +18,15 @@ import copy
 import io
 import os
 import re
+import socket
 import subprocess
+import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
+import requests
 from _pytest.nodes import Item
 from _pytest.python import Function
 from defs.trt_test_alternative import (check_output, popen, print_error,
@@ -309,6 +312,83 @@ class PerfBenchScriptTestCmds(NamedTuple):
         return cmd_str
 
 
+# Multi-node disagg support - all node logic centralized here
+def _is_first_node():
+    """Check if this is the first node (runs ctx + disagg servers)"""
+    return int(os.environ.get("SLURM_NODEID", 0)) == 0
+
+
+def _is_second_node():
+    """Check if this is the second node (runs gen server)"""
+    return int(os.environ.get("SLURM_NODEID", 0)) == 1
+
+
+def _is_first_process():
+    """Check if this is rank 0 process on current node (should start servers)"""
+    rank = int(os.environ.get("SLURM_PROCID", 0))
+    ntasks_per_node = int(os.environ.get("SLURM_NTASKS_PER_NODE", 1))
+    return (rank % ntasks_per_node) == 0
+
+
+def _get_nodelist():
+    """Get list of nodes from SLURM environment"""
+    return os.environ.get("SLURM_NODELIST", "").split(',')
+
+
+def _get_other_node_ip():
+    """Get IP of the other node for cross-node communication"""
+    nodelist = _get_nodelist()
+    current = socket.gethostname()
+    return next((node for node in nodelist if node != current), "localhost")
+
+
+def _is_multi_node():
+    """Check if this is a multi-node deployment"""
+    return len(_get_nodelist()) > 1
+
+
+def _should_use_llm_api_launch():
+    """Auto-detect if we should use llm-api-launch based on node count"""
+    return _is_multi_node()
+
+
+def _wait_for_server(url, timeout=300):
+    """Simple server health check"""
+    print_info(f"Waiting for server: {url}")
+    for _ in range(timeout):
+        try:
+            if requests.get(url, timeout=2).status_code == 200:
+                print_info(f"Server ready: {url}")
+                return True
+        except:
+            pass
+        time.sleep(1)
+    print_error(f"Server failed to start: {url}")
+    return False
+
+
+def _update_disagg_server_config_for_multinode(server_config):
+    """Update server config for multi-node deployment - only call from node0"""
+    if not _is_first_node():
+        return server_config
+
+    if _is_multi_node():
+        other_node = _get_other_node_ip()
+        server_config['context_servers']['urls'] = ['localhost:8001']
+        server_config['generation_servers']['urls'] = [f'{other_node}:8002']
+        print_info(
+            f"Updated config for multi-node: ctx=localhost:8001, gen={other_node}:8002"
+        )
+
+    return server_config
+
+
+def _get_launch_command_prefix():
+    """Get the appropriate launch command prefix"""
+    return "trtllm-llmapi-launch trtllm-serve" if _should_use_llm_api_launch(
+    ) else "trtllm-serve"
+
+
 class PerfDisaggScriptTestCmds(NamedTuple):
     ctx_cmd: str
     gen_cmd: str
@@ -317,38 +397,99 @@ class PerfDisaggScriptTestCmds(NamedTuple):
     benchmark_cmd: List[str]
 
     def run_cmd(self, cmd_idx: int, venv) -> str:
+        """Multi-node aware disagg server execution"""
         output = ""
+        procs = []
+
         try:
-            with (  # Start ctx workers
-                    open('output_ctx.log', 'w') as output_ctx,
-                    popen(self.ctx_cmd,
-                          stdout=output_ctx,
-                          stderr=subprocess.STDOUT,
-                          env=venv._new_env,
-                          shell=True) as ctx_workers_proc,
-                    # Start gen workers
-                    open('output_gen.log', 'w') as output_gen,
-                    popen(self.gen_cmd,
-                          stdout=output_gen,
-                          stderr=subprocess.STDOUT,
-                          env=venv._new_env,
-                          shell=True) as gen_workers_proc,
-                    # Start server
-                    open('output_server.log', 'w') as output_server,
-                    popen(self.server_cmd,
-                          stdout=output_server,
-                          stderr=subprocess.STDOUT,
-                          env=venv._new_env,
-                          shell=True) as server_proc):
+            # Step 1: Start ctx workers (only on first node, first process)
+            if _is_first_node() and _is_first_process():
+                print_info("Starting context server...")
+                output_ctx = open('output_ctx.log', 'w')
+                ctx_proc = popen(self.ctx_cmd,
+                                 stdout=output_ctx,
+                                 stderr=subprocess.STDOUT,
+                                 env=venv._new_env,
+                                 shell=True)
+                procs.append(ctx_proc)
+                time.sleep(3)  # Give server time to start
+                if not _wait_for_server("http://localhost:8001/health/", 180):
+                    raise RuntimeError("Context server failed to start")
+            elif _is_first_node():
+                print_info("Waiting for context server (non-first process)...")
+                _wait_for_server("http://localhost:8001/health/", 180)
+
+            # Step 2: Start gen workers (only on second node, first process)
+            if _is_second_node() and _is_first_process():
+                print_info("Starting generation server...")
+                output_gen = open('output_gen.log', 'w')
+                gen_proc = popen(self.gen_cmd,
+                                 stdout=output_gen,
+                                 stderr=subprocess.STDOUT,
+                                 env=venv._new_env,
+                                 shell=True)
+                procs.append(gen_proc)
+                time.sleep(3)  # Give server time to start
+                if not _wait_for_server("http://localhost:8002/health/", 180):
+                    raise RuntimeError("Generation server failed to start")
+            elif _is_second_node():
+                print_info(
+                    "Waiting for generation server (non-first process)...")
+                _wait_for_server("http://localhost:8002/health/", 180)
+            elif _is_first_node(
+            ):  # Node0 processes wait for gen server on node1
+                other_node = _get_other_node_ip()
+                print_info(f"Waiting for generation server on {other_node}...")
+                _wait_for_server(f"http://{other_node}:8002/health/", 180)
+
+            # Step 3: Start disagg server (only on first node, first process)
+            if _is_first_node() and _is_first_process():
+                print_info("Starting disaggregated server...")
+                output_server = open('output_server.log', 'w')
+                server_proc = popen(self.server_cmd,
+                                    stdout=output_server,
+                                    stderr=subprocess.STDOUT,
+                                    env=venv._new_env,
+                                    shell=True)
+                procs.append(server_proc)
+                time.sleep(5)  # Give disagg server more time
+                if not _wait_for_server("http://localhost:8000/health/", 300):
+                    raise RuntimeError("Disagg server failed to start")
+            else:
+                # All other processes wait for disagg server on node0
+                if _is_first_node():
+                    target_url = "http://localhost:8000/health/"
+                else:
+                    other_node = _get_other_node_ip()  # This should be node0
+                    target_url = f"http://{other_node}:8000/health/"
+                print_info(f"Waiting for disagg server at {target_url}...")
+                _wait_for_server(target_url, 300)
+
+            # Step 4: Run client and benchmark (only on first node, first process)
+            if _is_first_node() and _is_first_process():
+                print_info("Running client validation...")
                 check_output(self.client_cmd, env=venv._new_env)
+                print_info("Running performance benchmark...")
                 output += check_output(self.benchmark_cmd, env=venv._new_env)
+            else:
+                print_info("Skipping client/benchmark on this node/process")
+                output = "Multi-node test completed successfully (worker process)\n"
+
+        except Exception as e:
+            print_error(f"Error in disagg test: {e}")
+            raise
         finally:
-            server_proc.terminate()
-            ctx_workers_proc.terminate()
-            gen_workers_proc.terminate()
-            server_proc.wait()
-            ctx_workers_proc.wait()
-            gen_workers_proc.wait()
+            # Cleanup processes (only kill what we started)
+            for proc in procs:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                except Exception as e:
+                    print_error(f"Error terminating process: {e}")
+
         return output
 
     def get_cmd_str(self, cmd_idx) -> List[str]:

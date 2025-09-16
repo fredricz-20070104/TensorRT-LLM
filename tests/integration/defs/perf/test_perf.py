@@ -31,7 +31,9 @@ from ..conftest import get_llm_root, llm_models_root, trt_environment
 from .pytorch_model_config import get_model_yaml_config
 from .utils import (AbstractPerfScriptTestClass, PerfBenchScriptTestCmds,
                     PerfDisaggScriptTestCmds, PerfMetricType,
-                    PerfScriptTestCmds, generate_test_nodes)
+                    PerfScriptTestCmds, _get_launch_command_prefix,
+                    _update_disagg_server_config_for_multinode,
+                    generate_test_nodes)
 
 if not hasattr(re, "Pattern"):
     re.Pattern = type(re.compile(""))
@@ -1965,6 +1967,8 @@ class MultiMetricPerfTest(AbstractPerfScriptTestClass):
         ctx_config, gen_config = self._gen_disagg_worker_config()
         ctx_config_path = os.path.join(self._working_dir, "ctx_config.yaml")
         gen_config_path = os.path.join(self._working_dir, "gen_config.yaml")
+
+        # Create config files
         with open(ctx_config_path, 'w', encoding='utf-8') as f:
             yaml.dump(ctx_config, f)
         with open(gen_config_path, 'w', encoding='utf-8') as f:
@@ -1976,27 +1980,37 @@ class MultiMetricPerfTest(AbstractPerfScriptTestClass):
         model_path = MODEL_PATH_DICT[self._config.model_name]
         model_dir = os.path.join(llm_models_root(), model_path)
 
+        # GPU allocation per node (not cumulative across nodes)
         ctx_gpu_list = ",".join(
             [str(i) for i in range(self._config.ctx_server_workers)])
+        gen_gpu_list = ",".join(
+            [str(i) for i in range(self._config.gen_server_workers)])
 
-        gen_gpu_list = ",".join([
-            str(i) for i in range(
-                self._config.ctx_server_workers,
-                self._config.ctx_server_workers +
-                self._config.gen_server_workers)
-        ])
+        # Get launch command from utils (handles multi-node detection)
+        launch_cmd = _get_launch_command_prefix()
 
-        ctx_cmd = f'CUDA_VISIBLE_DEVICES={ctx_gpu_list} trtllm-serve {model_dir} --host localhost --port 8001 --extra_llm_api_options {ctx_config_path}'
-        gen_cmd = f'CUDA_VISIBLE_DEVICES={gen_gpu_list} trtllm-serve {model_dir} --host localhost --port 8002 --extra_llm_api_options {gen_config_path}'
+        # Multi-node aware commands
+        ctx_cmd = f'CUDA_VISIBLE_DEVICES={ctx_gpu_list} {launch_cmd} {model_dir} --host 0.0.0.0 --port 8001 --extra_llm_api_options {ctx_config_path}'
+        gen_cmd = f'CUDA_VISIBLE_DEVICES={gen_gpu_list} {launch_cmd} {model_dir} --host 0.0.0.0 --port 8002 --extra_llm_api_options {gen_config_path}'
+
         return ctx_cmd, gen_cmd
 
     def _get_disagg_server_deploy_command(self):
         server_config = self._gen_disagg_server_config()
         server_config_path = os.path.join(self._working_dir,
                                           "server_config.yaml")
+
+        # Update server config for multi-node (utils handles node0 check)
+        server_config = _update_disagg_server_config_for_multinode(
+            server_config)
+
+        # Write config file (all nodes need this)
         with open(server_config_path, 'w', encoding='utf-8') as f:
             yaml.dump(server_config, f)
-        return f'trtllm-serve disaggregated -c {server_config_path} -t 3600 -r 3600'
+
+        # Get launch command from utils (handles multi-node detection)
+        launch_cmd = _get_launch_command_prefix()
+        return f'{launch_cmd} disaggregated -c {server_config_path} -t 3600 -r 3600'
 
     def _get_disagg_client_command(self):
         client_dir = os.path.join(self._llm_root,
