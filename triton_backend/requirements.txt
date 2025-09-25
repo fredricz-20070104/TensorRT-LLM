@@ -1,7 +1,0 @@
-regex
-fire
-tritonclient[all]
-transformers==4.56.0
-pandas
-tabulate
-flash_attn
