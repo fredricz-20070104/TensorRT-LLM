@@ -8,7 +8,7 @@ set -euo pipefail
 # Configuration
 # ============================================================================
 USER_NAME="${USER:-$(whoami)}"
-export WORK_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/tests/integration/defs/perf/disagg"
+export WORK_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/tests/integration/defs/mem_leaks"
 export SCRIPT_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/examples/disaggregated/slurm/benchmark"
 export MODEL_DIR="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common"
 export OUTPUT_PATH="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/output"

@@ -17,7 +17,7 @@ set -euo pipefail
 # ============================================================================
 USER_NAME="${USER:-$(whoami)}"
 SCRIPT_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/examples/disaggregated/slurm/benchmark"
-WORK_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/tests/integration/defs/perf/disagg"
+WORK_DIR="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/tensorrt_llm/tests/integration/defs/mem_leaks"
 MODEL_DIR="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common"
 OUTPUT_PATH="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/output"
 CONTAINER_IMAGE="/lustre/fsw/portfolios/coreai/users/deemod/TRTLLM-7952/deemod+trtllm-2956978da3bf-aarch64-20251023.sqsh"
