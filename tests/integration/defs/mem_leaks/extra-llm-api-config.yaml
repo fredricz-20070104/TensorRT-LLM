@@ -1,0 +1,14 @@
+enable_attention_dp: true
+cuda_graph_config:
+    max_batch_size: 1024
+    enable_padding: true
+stream_interval: 20
+moe_config:
+    backend: CUTLASS
+print_iter_log: true
+num_postprocess_workers: 4
+kv_cache_config:
+  enable_block_reuse: False
+  enable_partial_reuse: False
+  free_gpu_memory_fraction: 0.85
+enable_chunked_prefill: False
