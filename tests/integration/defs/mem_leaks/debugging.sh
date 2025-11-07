@@ -79,7 +79,8 @@ srun -N1 -n2 \
 
 cd /lustre/fsw/portfolios/coreai/users/fredricz/tensorrt_llm/tests/integration/defs/perf/disagg
 
-srun -N1 -n4 \
+# Start trtllm-serve without valgrind
+srun -N2 --ntasks-per-node=4 \
     --partition=batch \
     --account=coreai_comparch_trtllm \
     --gres=gpu:4 \
@@ -87,7 +88,96 @@ srun -N1 -n4 \
     --container-image=${CONTAINER_IMAGE} \
     --container-name=debug-collect \
     --container-mounts=${WORK_DIR}:${WORK_DIR},${OUTPUT_PATH}:${OUTPUT_PATH},${REPO_DIR}:${REPO_DIR},${MODEL_DIR}:${MODEL_DIR} \
-    --pty bash
+    bash -c "
+        if [[ \$SLURM_PROCID == 0 ]]; then
+            apt-get update && apt-get install -y valgrind;
+            pip install sglang --no-deps;
+            pip install pybase64;
+        fi;
+        trtllm-llmapi-launch trtllm-serve ${MODEL_DIR}/gpt-oss-120b --trust_remote_code --tp_size 8 --ep_size 8 --kv_cache_free_gpu_memory_fraction 0.9 --backend pytorch --extra_llm_api_options  ${WORK_DIR}/extra-llm-api-config.yaml --max_num_tokens 20000
+    " &> ${OUTPUT_PATH}/trtllm-serve.log
+
+
+# Compare and install valgrind from source
+srun -N1 --ntasks-per-node=1 \
+    --partition=batch \
+    --account=coreai_comparch_trtllm \
+    --gres=gpu:4 \
+    --time=04:00:00 \
+    --container-image=${CONTAINER_IMAGE} \
+    --container-mounts=${WORK_DIR}:${WORK_DIR} \
+    bash -c "
+      cd ${WORK_DIR}
+      wget https://sourceware.org/pub/valgrind/valgrind-3.22.0.tar.bz2
+      tar -xjf valgrind-3.22.0.tar.bz2
+      cd valgrind-3.22.0
+      ./configure --prefix=${WORK_DIR}/valgrind-install
+      make -j$(nproc)
+      make install
+    "
+
+# Start trtllm-serve with valgrind
+srun -N2 --ntasks-per-node=4 \
+    --partition=batch \
+    --account=coreai_comparch_trtllm \
+    --gres=gpu:4 \
+    --time=04:00:00 \
+    --container-image=${CONTAINER_IMAGE} \
+    --container-name=debug-collect \
+    --container-mounts=${WORK_DIR}:${WORK_DIR},${OUTPUT_PATH}:${OUTPUT_PATH},${REPO_DIR}:${REPO_DIR},${MODEL_DIR}:${MODEL_DIR} \
+    bash <<'EOF' &> ${OUTPUT_PATH}/trtllm-serve-valgrind.log
+INSTALL_DONE="/tmp/install_done_${SLURM_JOB_ID}"
+
+if [[ $SLURM_PROCID == 0 ]]; then
+    apt-get update && apt-get install -y valgrind libc6-dbg
+    pip install sglang --no-deps
+    pip install pybase64
+    
+    # Write flag file
+    touch $INSTALL_DONE
+    echo "Process 0: Installation done, marker created"
+else
+    # Other processes wait for the flag file
+    echo "Process $SLURM_PROCID: Waiting for installation..."
+    while [[ ! -f $INSTALL_DONE ]]; do
+        sleep 2
+    done
+    echo "Process $SLURM_PROCID: Installation complete, continuing"
+fi
+
+
+    trtllm-llmapi-launch valgrind --leak-check=full \
+    --show-leak-kinds=definite,possible \
+    --num-transtab-sectors=48 \
+    --track-origins=yes \
+    --log-file=${OUTPUT_PATH}/valgrind-output-%p.log \
+    trtllm-serve ${MODEL_DIR}/gpt-oss-120b --trust_remote_code --tp_size 8 --ep_size 8 --kv_cache_free_gpu_memory_fraction 0.9 --backend pytorch --extra_llm_api_options ${WORK_DIR}/extra-llm-api-config.yaml --max_num_tokens 20000
+
+EOF
+
+# Run benchmark get result
+srun  --container-remap-root --container-name=debug-collect  --overlap \
+    -N1 --ntasks-per-node=1 -w nvl72058-T11  --jobid=822318 \
+    bash -c " 
+        python3 -m sglang.bench_serving \
+        --dataset-name random-ids \
+        --backend vllm \
+        --model openai/gpt-oss-120b \
+        --random-range-ratio 1 \
+        --num-prompt 40980 \
+        --random-input 1024 \
+        --random-output 1024 \
+        --max-concurrency 8196
+    " &> ${OUTPUT_PATH}/benchmark.log
+
+
+
+
+# 在容器内安装（需要 root 权限）
+apt-get update && apt-get install -y valgrind && apt-get install libc6-dbg
+pip install sglang --no-deps 
+
+
 
 trtllm-serve ${MODEL_DIR}/gpt-oss-120b --trust_remote_code --tp_size 4 --ep_size 4 --kv_cache_free_gpu_memory_fraction 0.9 --backend pytorch --extra_llm_api_options  extra-llm-api-config.yaml --max_num_tokens 20000
 
@@ -108,8 +198,7 @@ valgrind --leak-check=full \
 
 
 
-# 在容器内安装（需要 root 权限）
-apt-get update && apt-get install -y valgrind
+
 
 valgrind --leak-check=full \
   --show-leak-kinds=definite,possible \
@@ -123,3 +212,4 @@ valgrind --leak-check=full \
     --backend pytorch \
     --extra_llm_api_options extra-llm-api-config.yaml \
     --max_num_tokens 20000
+
