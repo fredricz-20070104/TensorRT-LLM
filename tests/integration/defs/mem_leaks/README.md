@@ -26,7 +26,8 @@ mem_leaks/
 | **灵活性** | 低（需修改脚本） | 高（随时调整） |
 | **日志管理** | 自动整理 | 手动查看 |
 | **适用场景** | 生产测试、无人值守 | 开发调试、探索 |
-| **重入能力** | 支持（srun --jobid） | 原生支持 |
+| **重入能力** | 支持（srun --jobid） | **原生支持（自动检测）** |
+| **持久化** | 一次性运行 | **会话级持久化** |
 | **学习曲线** | 低 | 中（需了解screen） |
 
 ## 🚀 方案1：全自动 sbatch 脚本
@@ -83,26 +84,40 @@ less /path/to/debug_memory_leak_<JOBID>/valgrind-*.log
 tail /path/to/debug_memory_leak_<JOBID>/benchmark.log
 ```
 
-## 🔧 方案2：交互式调试脚本
+## 🔧 方案2：交互式调试脚本（支持重入）
 
 ### 特点
+- **支持重入同一容器** - 使用固定 container-name + overlap
 - 完全交互式控制
 - 使用 screen 管理后台服务
-- 可随时调整参数
-- 适合探索性测试
+- 依赖和服务在会话间持久化
+- 可随时退出和重新进入
+- 适合探索性测试和长时间调试
 
 ### 使用方法
 
 ```bash
-# 1. 启动交互式会话
-cd /lustre/fsw/portfolios/coreai/users/fredricz/tensorrt_llm/tests/integration/defs/perf/disagg/mem_leaks
+# === 第1次：创建新会话 ===
+cd /lustre/fsw/portfolios/coreai/users/fredricz/tensorrt_llm/tests/integration/defs/mem_leaks
 bash debug_memory_leak_interactive.sh
 
-# 2. 进入容器后，按照提示执行
-[DEBUG] $ setup_deps        # 安装依赖
-[DEBUG] $ start_server      # 启动服务（后台 + screen）
-[DEBUG] $ run_benchmark     # 运行压测
-[DEBUG] $ check_logs        # 查看结果
+# 进入容器后
+[DEBUG-PERSIST] $ setup_deps        # 安装依赖
+[DEBUG-PERSIST] $ start_server      # 启动服务（后台 + screen）
+[DEBUG-PERSIST] $ exit              # 安全退出！服务继续运行
+
+# === 第2次：重入同一会话 ===
+bash debug_memory_leak_interactive.sh
+# 输出：Found Existing Debug Session (Re-entry Mode)
+# 自动重连到同一容器！
+
+[DEBUG-PERSIST] $ run_benchmark     # 运行压测
+[DEBUG-PERSIST] $ exit              # 再次退出
+
+# === 第3次：查看结果 ===
+bash debug_memory_leak_interactive.sh
+[DEBUG-PERSIST] $ check_logs        # 查看结果
+[DEBUG-PERSIST] $ stop_server       # 完全停止
 ```
 
 ### 内置命令
@@ -132,30 +147,86 @@ screen -r trtllm-server
 screen -X -S trtllm-server quit
 ```
 
+### 重入机制说明
+
+脚本使用以下机制实现持久化会话：
+
+1. **固定 container name**：`debug-memory-${USER}`
+2. **JOBID 持久化**：保存到 `.debug_session_${USER}` 文件
+3. **自动检测**：脚本启动时检查是否有活跃会话
+4. **overlap 重入**：使用 `--overlap` 参数重新进入同一容器
+
+**工作原理：**
+```bash
+# 第1次运行：创建新容器
+srun --container-name=debug-memory-fredricz ...
+
+# 第2次运行：检测到活跃 JOBID，自动使用 overlap
+srun --jobid=12345 --overlap --container-name=debug-memory-fredricz ...
+```
+
 ### 多终端工作流
 
 **终端1：主控制**
 ```bash
-[DEBUG] $ setup_deps
-[DEBUG] $ start_server
-[DEBUG] $ run_benchmark
+[DEBUG-PERSIST] $ setup_deps
+[DEBUG-PERSIST] $ start_server
+[DEBUG-PERSIST] $ exit  # 安全退出
 ```
 
-**终端2：监控（可选）**
+**终端2：重入监控**
 ```bash
-# 在另一个窗口重入同一容器
-srun --jobid=<JOBID> --overlap --pty bash
-[DEBUG] $ watch -n 1 check_gpu
+# 重入同一容器
+bash debug_memory_leak_interactive.sh
+[DEBUG-PERSIST] $ watch -n 1 check_gpu
 ```
 
-**终端3：查看日志（可选）**
+**终端3：查看日志**
 ```bash
-[DEBUG] $ screen -r trtllm-server  # 实时查看服务器输出
+# 再次重入
+bash debug_memory_leak_interactive.sh
+[DEBUG-PERSIST] $ screen -r trtllm-server  # 实时查看服务器输出
+```
+
+**所有终端都在同一容器中，共享环境！**
+
+### 手动清理会话
+
+如果需要强制结束当前会话并清理：
+
+```bash
+# 1. 查找你的 JOBID
+cat /lustre/fsw/.../mem_leaks/.debug_session_${USER}
+
+# 2. 取消 job
+scancel <JOBID>
+
+# 3. 清理会话标记
+rm /lustre/fsw/.../mem_leaks/.debug_session_${USER}
+
+# 4. 下次运行将创建新会话
+bash debug_memory_leak_interactive.sh
 ```
 
 ## 🔍 故障排查
 
-### 问题1：依赖安装失败
+### 问题1：无法重入会话
+
+**症状**：运行脚本总是创建新会话，而不是重入
+
+**解决**：
+```bash
+# 检查会话标记文件
+cat .debug_session_${USER}
+
+# 检查 job 是否还在运行
+squeue -j $(cat .debug_session_${USER})
+
+# 如果 job 已结束，清理标记文件
+rm .debug_session_${USER}
+```
+
+### 问题2：依赖安装失败
 
 **症状**：valgrind 或 sglang 安装报错
 

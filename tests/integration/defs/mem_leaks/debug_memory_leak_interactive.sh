@@ -1,6 +1,6 @@
 #!/bin/bash
-# Interactive Memory Leak Debugging Session
-# Provides step-by-step control over the testing process
+# Interactive Memory Leak Debugging Session with Re-entry Support
+# Supports reconnecting to the same container session
 
 set -euo pipefail
 
@@ -14,29 +14,89 @@ export MODEL_DIR="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/
 export OUTPUT_PATH="/lustre/fsw/portfolios/coreai/users/${USER_NAME}/output"
 export CONTAINER_IMAGE="/lustre/fsw/portfolios/coreai/users/deemod/TRTLLM-7952/deemod+trtllm-2956978da3bf-aarch64-20251023.sqsh"
 
-cat << 'EOF'
+# Fixed container name for re-entry
+CONTAINER_NAME="debug-memory-${USER_NAME}"
+JOB_MARKER="${WORK_DIR}/.debug_session_${USER_NAME}"
+
+# ============================================================================
+# Check for existing session
+# ============================================================================
+if [ -f "$JOB_MARKER" ]; then
+    EXISTING_JOBID=$(cat "$JOB_MARKER" 2>/dev/null || echo "")
+    
+    if [ -n "$EXISTING_JOBID" ]; then
+        # Check if job is still running
+        if squeue -j $EXISTING_JOBID -h >/dev/null 2>&1; then
+            cat << EOF
 ============================================================================
-              Interactive Memory Leak Debugging Session
+          Found Existing Debug Session (Re-entry Mode)
 ============================================================================
 
-This script will:
-  1. Start an interactive container with 4 GPUs
-  2. Provide helper commands for testing
-  3. Allow you to control each step manually
+JOBID: $EXISTING_JOBID
+Container: $CONTAINER_NAME
+
+Reconnecting to your existing session...
+  - All installed dependencies are preserved
+  - Running services remain active
+  - screen sessions are still there
+
+Press Enter to reconnect...
+EOF
+            read
+            
+            echo "Reconnecting to existing container..."
+            echo ""
+            
+            # Re-enter existing container with overlap
+            srun --jobid=$EXISTING_JOBID --overlap -N1 -n1 \
+                --container-name=${CONTAINER_NAME} \
+                --container-mounts=${WORK_DIR}:${WORK_DIR},${SCRIPT_DIR}:${SCRIPT_DIR},${MODEL_DIR}:${MODEL_DIR},${OUTPUT_PATH}:${OUTPUT_PATH} \
+                --pty bash
+            exit 0
+        else
+            echo "Previous session (JOBID: $EXISTING_JOBID) has expired."
+            echo "Starting new session..."
+            echo ""
+            rm -f "$JOB_MARKER"
+            sleep 2
+        fi
+    fi
+fi
+
+# ============================================================================
+# Start new session
+# ============================================================================
+cat << 'EOF'
+============================================================================
+         Interactive Memory Leak Debugging Session (NEW)
+============================================================================
+
+Starting NEW debug session...
+
+This session is PERSISTENT and RE-ENTERABLE:
+  ✓ Container name is fixed - you can reconnect anytime
+  ✓ Dependencies you install will remain
+  ✓ Services started in screen will keep running
+  ✓ Just run this script again to reconnect!
+
+Session details:
+  - Duration: 4 hours
+  - GPUs: 4 (single node)
+  - Re-entry: Run this script again within 4 hours
 
 You will be able to:
   - Install dependencies (valgrind, sglang)
   - Start trtllm-serve with valgrind in a screen session
   - Run benchmark tests
-  - Monitor GPU memory
-  - Analyze results
+  - Exit and re-enter safely
 
-Press Enter to continue...
+Press Enter to start new session...
 EOF
 
 read
 
-echo "Starting interactive container..."
+echo "Starting new container session..."
+echo "Container name: $CONTAINER_NAME"
 echo ""
 
 # ============================================================================
@@ -48,10 +108,13 @@ srun -N1 -n4 --ntasks-per-node=4 \
     --gres=gpu:4 \
     --time=04:00:00 \
     --container-image=${CONTAINER_IMAGE} \
-    --container-name=debug-memory-interactive \
+    --container-name=${CONTAINER_NAME} \
     --container-mounts=${WORK_DIR}:${WORK_DIR},${SCRIPT_DIR}:${SCRIPT_DIR},${MODEL_DIR}:${MODEL_DIR},${OUTPUT_PATH}:${OUTPUT_PATH} \
     --mpi=pmix \
     --pty bash --rcfile <(cat <<'RCFILE'
+
+# Save JOBID for re-entry
+echo $SLURM_JOB_ID > ${WORK_DIR}/.debug_session_${USER}
 
 # ============================================================================
 # Welcome Banner
@@ -59,8 +122,13 @@ srun -N1 -n4 --ntasks-per-node=4 \
 cat << 'EOF'
 
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                  Interactive Debugging Environment                         ║
+║         Interactive Debugging Environment (PERSISTENT SESSION)             ║
 ╚════════════════════════════════════════════════════════════════════════════╝
+
+🔄 THIS SESSION IS RE-ENTERABLE!
+   - Exit anytime with 'exit' or Ctrl+D
+   - Run the script again to reconnect to THIS container
+   - Dependencies and services persist
 
 Available Commands:
   setup_deps     - Install valgrind and sglang
@@ -72,16 +140,19 @@ Available Commands:
   help           - Show detailed help
 
 Environment Variables:
-  WORK_DIR:    /lustre/fsw/.../perf/disagg
+  WORK_DIR:    /lustre/fsw/.../mem_leaks
   MODEL_DIR:   /lustre/fs1/.../common
   OUTPUT_PATH: /lustre/fsw/.../output
 
 Quick Start:
   1. Run: setup_deps
-  2. Run: start_server
-  3. Wait for "Server is ready!"
+  2. Run: start_server (runs in screen - safe to exit after!)
+  3. (Optional: exit and re-enter to test persistence)
   4. Run: run_benchmark
   5. Run: check_logs
+  6. Exit safely - server keeps running in screen!
+
+To reconnect: Just run debug_memory_leak_interactive.sh again
 
 Type 'help' for detailed instructions.
 
@@ -377,35 +448,55 @@ help() {
                         Detailed Usage Guide
 ============================================================================
 
+🔄 RE-ENTRY FEATURE
+------------------
+This session is PERSISTENT! You can:
+  1. Exit anytime (Ctrl+D or 'exit')
+  2. Run debug_memory_leak_interactive.sh again
+  3. Reconnect to the SAME container with all your:
+     - Installed dependencies
+     - Running services (in screen)
+     - Environment variables
+     - Work in progress
+
+The session lasts 4 hours from initial start.
+
 WORKFLOW
 --------
 The typical workflow for memory leak testing:
 
-1. Setup Environment
+1. Setup Environment (First time only)
    $ setup_deps
    
    This installs valgrind and sglang in the container.
+   These remain installed even after you exit!
 
-2. Start Server
+2. Start Server (Runs in screen - persistent)
    $ start_server
    
    This starts trtllm-serve under valgrind monitoring in a screen session.
-   The server runs in the background, allowing you to continue working.
+   The server runs in the background, allowing you to exit safely.
    
    Wait for "Server is ready!" message (2-5 minutes).
 
-3. Run Benchmark
+3. (Optional) Exit and Re-enter
+   $ exit
+   # Later, reconnect:
+   $ bash debug_memory_leak_interactive.sh
+   # Server is still running!
+
+4. Run Benchmark
    $ run_benchmark
    
    This runs the sglang benchmark to stress test the server.
    Results are logged to ${LOG_DIR}/benchmark.log
 
-4. Check Results
+5. Check Results
    $ check_logs
    
    This shows a summary of valgrind output and log locations.
 
-5. Stop Server
+6. Stop Server (When completely done)
    $ stop_server
    
    Cleanly stops the server when done.
@@ -520,22 +611,40 @@ Solution:
 EXAMPLES
 --------
 
-Basic workflow:
-  [DEBUG] $ setup_deps
-  [DEBUG] $ start_server
-  # Wait for ready message
-  [DEBUG] $ run_benchmark
-  [DEBUG] $ check_logs
+Example 1: Basic workflow with re-entry
+  # Session 1: Setup and start
+  [DEBUG-PERSIST] $ setup_deps
+  [DEBUG-PERSIST] $ start_server
+  [DEBUG-PERSIST] $ exit  # Safe to exit!
+  
+  # Session 2: Re-enter and test
+  $ bash debug_memory_leak_interactive.sh
+  [DEBUG-PERSIST] $ run_benchmark
+  [DEBUG-PERSIST] $ check_logs
+  [DEBUG-PERSIST] $ exit
+  
+  # Session 3: Check results later
+  $ bash debug_memory_leak_interactive.sh
+  [DEBUG-PERSIST] $ check_logs
+  [DEBUG-PERSIST] $ stop_server
 
-Monitor while testing:
-  [DEBUG] $ watch -n 1 check_gpu
+Example 2: Monitor while testing
+  [DEBUG-PERSIST] $ watch -n 1 check_gpu
 
-View live server output:
-  [DEBUG] $ screen -r trtllm-server
+Example 3: View live server output
+  [DEBUG-PERSIST] $ screen -r trtllm-server
   # Ctrl+A, D to detach
 
-Analyze specific leaks:
-  [DEBUG] $ grep 'definitely lost' ${LOG_DIR}/valgrind-*.log
+Example 4: Analyze specific leaks
+  [DEBUG-PERSIST] $ grep 'definitely lost' ${LOG_DIR}/valgrind-*.log
+
+Example 5: Long-running test (exit during benchmark)
+  [DEBUG-PERSIST] $ start_server
+  [DEBUG-PERSIST] $ run_benchmark &  # Run in background
+  [DEBUG-PERSIST] $ exit  # Exit while benchmark runs
+  # Come back later
+  $ bash debug_memory_leak_interactive.sh
+  [DEBUG-PERSIST] $ check_logs  # Check if benchmark completed
 
 HELP_EOF
 }
@@ -543,8 +652,8 @@ HELP_EOF
 # Export all functions for use in the shell
 export -f setup_deps start_server run_benchmark check_gpu check_logs stop_server help
 
-# Set custom prompt
-export PS1="\[\e[1;32m\][DEBUG]\[\e[0m\] \w $ "
+# Set custom prompt to indicate persistent session
+export PS1="\[\e[1;32m\][DEBUG-PERSIST]\[\e[0m\] \w $ "
 
 # Change to work directory
 cd ${WORK_DIR}
