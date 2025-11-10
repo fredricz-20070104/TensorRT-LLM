@@ -213,3 +213,32 @@ valgrind --leak-check=full \
     --extra_llm_api_options extra-llm-api-config.yaml \
     --max_num_tokens 20000
 
+
+
+
+
+# Meta-Llama-3.1-8B model
+scp -r  ./Meta-Llama-3.1-8B    fredricz@oci-hsg-cs-001-login-01.nvidia.com:/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common
+
+valgrind --leak-check=full \
+    --show-leak-kinds=all \
+    --num-transtab-sectors=48 \
+    --track-origins=yes \
+    --trace-children=yes \
+    --log-file=./valgrind-output.log \
+    trtllm-serve $LLM_MODELS_ROOT/llama-3.1-model/Meta-Llama-3.1-8B --trust_remote_code --backend pytorch --max_num_tokens 20000
+
+
+huggingface-cli login -- Login hfToken  ${HF_TOKEN}
+
+
+python3 -m sglang.bench_serving \
+     --dataset-name random-ids \
+     --backend vllm \
+     --model meta-llama/Llama-3.1-8B \
+     --random-range-ratio 1 \
+     --num-prompt 600 \
+     --random-input 1024 \
+     --random-output 1024 \
+     --max-concurrency 100
+
