@@ -356,9 +356,11 @@ class JobManager:
         # Call the internal implementation method
         check_result = JobManager._check_job_result(
             job_id=job_id,
+            test_category=test_config.test_category,  # Pass test category for routing
             benchmark_type=test_config.benchmark_type,
             config=config_data,
             metrics_config=test_config.metrics_config,
+            accuracy_config=test_config.accuracy_config,  # Pass accuracy config
             model_name=test_config.model_name,
             result_dir=result_dir,
             timestamps=timestamps,
@@ -607,28 +609,35 @@ class JobManager:
     @staticmethod
     def _check_job_result(
         job_id: str,
+        test_category: str,
         benchmark_type: str,
         config: dict,
         metrics_config,
+        accuracy_config,
         model_name: str,
         result_dir: str,
         timestamps: Optional[Dict[str, str]] = None,
         test_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Internal method: Check job result with metrics config.
+        """Internal method: Check job result with category routing.
 
         This is a low-level method that requires manual parameter extraction.
         Use check_result() for a high-level interface with TestConfig.
 
         Args:
             job_id: SLURM job ID
+            test_category: Test category ("perf" or "accuracy")
             benchmark_type: Benchmark type (1k1k, 8k1k, etc.)
             config: Configuration dict (YAML data)
             metrics_config: MetricsConfig object (default or custom)
+            accuracy_config: AccuracyConfig object (required for accuracy tests)
             model_name: Model name
             result_dir: Result directory
             timestamps: Optional timestamps dict
             test_name: Optional test name
+
+        Returns:
+            Dict with success status and details
         """
         result = {"job_id": job_id, "status": "UNKNOWN", "success": False}
         print(f"   📁 Checking result directory: {result_dir}")
@@ -636,28 +645,89 @@ class JobManager:
         # Print logs and config files to console
         JobManager._print_logs_to_console(job_id, result_dir)
 
-        # Parse using metrics config
-        log_parser = LogParser(benchmark_type, config, metrics_config, result_dir)
-        parse_result = log_parser.parse(model_name, timestamps=timestamps, test_name=test_name)
+        # Route based on test_category
+        if test_category == "accuracy":
+            # Accuracy test: parse and validate accuracy values
+            if not accuracy_config:
+                result["error"] = "Accuracy config not found in test configuration"
+                return result
 
-        if not parse_result["status"]:
+            # Import and use AccuracyParser
+            from accuracy_parser import AccuracyParser
+
+            accuracy_parser = AccuracyParser(metrics_config, accuracy_config, result_dir)
+            validation_result = accuracy_parser.parse_and_validate()
+
+            # TODO: result.update(validation_result) may have issues here
+            if not validation_result["success"]:
+                result["error"] = validation_result.get("error", "Accuracy validation failed")
+                return result
+
+            # Print validation results
+            print(f"   📊 Accuracy Validation Results:")
+            all_passed = validation_result["all_passed"]
+
+            # Print results for each run
+            for run_validation in validation_result.get("runs", []):
+                run_name = run_validation["run_name"]
+                run_passed = run_validation["all_passed"]
+                run_icon = "✅" if run_passed else "❌"
+                
+                print(f"   {run_icon} {run_name}:")
+                
+                for ds_result in run_validation["results"]:
+                    status_icon = "✅" if ds_result["passed"] else "❌"
+                    dataset_name = ds_result['dataset']
+                    filter_type = ds_result.get('filter', 'flexible-extract')
+                    threshold_type = ds_result.get('threshold_type', 'relative')
+
+                    print(f"      {status_icon} {dataset_name} ({filter_type}) - {threshold_type}:")
+                    if "error" in ds_result:
+                        print(f"         ⚠️  Error: {ds_result['error']}")
+                    else:
+                        print(f"         Expected: {ds_result['expected']:.4f}")
+                        print(f"         Actual:   {ds_result['actual']:.4f}")
+                        print(f"         Threshold: {ds_result['threshold']} ({ds_result['threshold_type']})")
+                        print(f"         {ds_result['message']}")
+
+            if all_passed:
+                print(f"   ✅ All accuracy tests PASSED (all runs)")
+                result["success"] = True
+                result["status"] = "PASSED"
+            else:
+                print(f"   ❌ Some accuracy tests FAILED")
+                result["success"] = False
+                result["status"] = "FAILED"
+
+            # Selective update to avoid overwriting success/status
+            result["all_passed"] = validation_result["all_passed"]
+            result["accuracy_runs"] = validation_result["runs"]
+            result["raw_accuracy"] = validation_result.get("raw_results", [])
             return result
 
-        # Check if df is None
-        result_df = parse_result.get("df")
-        if result_df is None:
-            print("   ❌ Parse result contains None DataFrame")
+        else:  # perf
+            # Performance test: parse metrics and save to CSV (existing logic)
+            log_parser = LogParser(benchmark_type, config, metrics_config, result_dir)
+            parse_result = log_parser.parse(model_name, timestamps=timestamps, test_name=test_name)
+
+            if not parse_result["status"]:
+                return result
+
+            # Check if df is None
+            result_df = parse_result.get("df")
+            if result_df is None:
+                print("   ❌ Parse result contains None DataFrame")
+                return result
+
+            output_path = EnvManager.get_output_path()
+            os.makedirs(output_path, exist_ok=True)
+
+            output_csv = os.path.join(output_path, "perf_script_test_results.csv")
+            result_saver = ResultSaver(output_csv)
+            result_saver.append_a_df(result_df)
+            result["success"] = True
+            result["status"] = "SUCCESS"
             return result
-
-        output_path = EnvManager.get_output_path()
-        os.makedirs(output_path, exist_ok=True)
-
-        output_csv = os.path.join(output_path, "perf_script_test_results.csv")
-        result_saver = ResultSaver(output_csv)
-        result_saver.append_a_df(result_df)
-        result["success"] = True
-        result["status"] = "SUCCESS"
-        return result
 
 
 # create executor function

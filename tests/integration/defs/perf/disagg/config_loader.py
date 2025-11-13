@@ -37,14 +37,80 @@ class MetricsConfig:
         )
 
 
+@dataclass
+class DatasetThreshold:
+    """Accuracy threshold configuration for a single dataset."""
+
+    dataset_name: str  # Dataset name: gsm8k, mmlu, humaneval, etc.
+    expected_value: float  # Expected accuracy value
+    threshold: float  # Threshold value
+    threshold_type: str  # "relative" or "absolute"
+    filter_type: str = "flexible-extract"  # lm_eval filter type
+
+    def validate(self, actual_value: float) -> tuple[bool, str]:
+        """Validate if accuracy passes the threshold.
+
+        Args:
+            actual_value: Actual accuracy value from test
+
+        Returns:
+            Tuple of (passed, message): Whether validation passed and detail message
+        """
+        if self.threshold_type == "relative":
+            if self.expected_value == 0:
+                error = abs(actual_value)
+            else:
+                error = abs(actual_value - self.expected_value) / abs(self.expected_value)
+            passed = error <= self.threshold
+            msg = f"Relative error: {error:.6f} (threshold: {self.threshold})"
+        else:  # absolute
+            error = self.expected_value - actual_value
+            passed = error <= 2.326* self.threshold
+            msg = f"Absolute error: {error:.6f} (threshold: {self.threshold})"
+
+        return passed, msg
+
+
+@dataclass
+class AccuracyConfig:
+    """Accuracy test configuration (supports multiple datasets)."""
+
+    datasets: List[DatasetThreshold]  # List of dataset threshold configurations
+
+    def get_dataset_config(self, dataset_name: str) -> Optional[DatasetThreshold]:
+        """Get configuration by dataset name.
+
+        Args:
+            dataset_name: Name of the dataset to look up
+
+        Returns:
+            DatasetThreshold config if found, None otherwise
+        """
+        for ds in self.datasets:
+            if ds.dataset_name.lower() == dataset_name.lower():
+                return ds
+        return None
+
+    def get_all_dataset_names(self) -> List[str]:
+        """Get all configured dataset names.
+
+        Returns:
+            List of dataset names
+        """
+        return [ds.dataset_name for ds in self.datasets]
+
+
 # ============================================================================
 # Default Metrics configuration
 # ============================================================================
 
 
-COMMON_ACCURACY_METRICS_CONFIG = MetricsConfig(
-    log_file="accuracy_result.json",
-    extractor_pattern=r"Accuracy:\s+([0-9.]+)%",
+# Accuracy test uses accuracy_eval.log (markdown table output from lm_eval)
+_COMMON_ACCURACY_CONFIG = MetricsConfig(
+    log_file="accuracy_eval.log",
+    # Regex to match lm_eval markdown table output
+    # Format: |gsm8k|3|flexible-extract|5|exact_match|↑|0.9454|±|0.0063|
+    extractor_pattern=r'\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|',
     metric_names=["ACCURACY"],
 )
 
@@ -97,9 +163,9 @@ DEFAULT_METRICS_CONFIG = {
             "WIDEEP_SERVER_P99_E2EL",
         ],
     ),
-    # Accuracy test default configuration
-    ("disagg", "accuracy"): COMMON_ACCURACY_METRICS_CONFIG,
-    ("wideep", "accuracy"): COMMON_ACCURACY_METRICS_CONFIG,
+    # Accuracy test configuration
+    ("disagg", "accuracy"): _COMMON_ACCURACY_CONFIG,
+    ("wideep", "accuracy"): _COMMON_ACCURACY_CONFIG,
 }
 
 
@@ -116,6 +182,7 @@ class TestConfig:
     config_data: dict  # Full YAML content
     metrics_config: MetricsConfig  # Metrics configuration (default or overridden)
     supported_gpus: List[str]  # Supported GPU types list
+    accuracy_config: Optional[AccuracyConfig] = None  # Accuracy configuration (for accuracy tests)
 
     @property
     def display_name(self) -> str:
@@ -300,6 +367,23 @@ class ConfigLoader:
         # Generate test ID using config data
         test_id = self._make_test_id(test_type, test_category, test_file_name, config_data)
 
+        # Load accuracy configuration (only for accuracy tests)
+        accuracy_config = None
+        if test_category == "accuracy":
+            acc_meta = metadata.get('accuracy', {})
+            if acc_meta and 'datasets' in acc_meta:
+                datasets = []
+                for ds_config in acc_meta['datasets']:
+                    datasets.append(DatasetThreshold(
+                        dataset_name=ds_config.get('name', 'gsm8k'),
+                        expected_value=float(ds_config.get('expected_value', 0.0)),
+                        threshold=float(ds_config.get('threshold', 0.02)),
+                        threshold_type=ds_config.get('threshold_type', 'relative'),
+                        filter_type=ds_config.get('filter_type', 'flexible-extract')
+                    ))
+                accuracy_config = AccuracyConfig(datasets=datasets)
+                print(f"   📊 Loaded accuracy config with {len(datasets)} dataset(s)")
+
         return TestConfig(
             config_path=str(yaml_path),
             test_id=test_id,
@@ -310,6 +394,7 @@ class ConfigLoader:
             config_data=config_data,
             metrics_config=metrics_config,
             supported_gpus=supported_gpus,
+            accuracy_config=accuracy_config,
         )
 
     def _generate_benchmark_type(self, config_data: dict) -> str:
