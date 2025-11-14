@@ -195,8 +195,6 @@ profiling:
 
 # Worker Configuration
 worker_config:
-  eplb_num_slots: 0
-  
   gen:
     tensor_parallel_size: 8
     moe_expert_parallel_size: 8

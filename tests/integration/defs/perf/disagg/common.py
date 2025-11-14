@@ -137,7 +137,9 @@ def extract_config_fields(config_data: dict) -> dict:
     cache_transceiver_backend = config_data["worker_config"]["gen"]["cache_transceiver_config"][
         "backend"
     ]
-    eplb_slots = config_data["worker_config"].get("eplb_num_slots", 0)
+
+    eplb_slots = (config_data['worker_config']['gen'].get('moe_config', {}).get(
+        'load_balancer', {}).get('num_slots', 0))
 
     # Get MTP size
     gen_config = config_data["worker_config"]["gen"]

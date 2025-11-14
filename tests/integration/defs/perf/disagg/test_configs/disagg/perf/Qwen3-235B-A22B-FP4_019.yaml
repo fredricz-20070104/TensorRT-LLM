@@ -45,7 +45,6 @@ accuracy:
   tasks: "gsm8k"  # Evaluation tasks (comma-separated)
   model_args_extra: "num_concurrent=512,max_retries=3,tokenized_requests=false,timeout=1200,max_gen_toks=256,max_length=4096"  # Extra model arguments for lm_eval
 worker_config:
-  eplb_num_slots: 0
   gen:
     tensor_parallel_size: 32
     moe_expert_parallel_size: 32
