@@ -83,9 +83,12 @@ def compare_backends(csv_path, threshold=5.0, default_backend="NIXL"):
         if len(default_data) == 0 and len(ucx_data) == 0:
             continue
 
-        # Extract values
+        # Extract values and original test names
         default_value = default_data["perf_metric"].values[0] if len(default_data) > 0 else None
+        default_original_name = default_data["network_name"].values[0] if len(default_data) > 0 else None
+        
         ucx_value = ucx_data["perf_metric"].values[0] if len(ucx_data) > 0 else None
+        ucx_original_name = ucx_data["network_name"].values[0] if len(ucx_data) > 0 else None
 
         # Determine status
         status = "Pass"
@@ -113,11 +116,9 @@ def compare_backends(csv_path, threshold=5.0, default_backend="NIXL"):
             if default_value != 0:
                 status = "Fail"
 
-        # Build output row
-        test_case_name_default = base_case.replace(
-            "ccbackend:BACKEND", f"ccbackend:{default_backend}"
-        )
-        test_case_name_ucx = base_case.replace("ccbackend:BACKEND", "ccbackend:UCX")
+        # Use original network names, or "N/A" if data doesn't exist
+        test_case_name_default = default_original_name if default_original_name else "N/A"
+        test_case_name_ucx = ucx_original_name if ucx_original_name else "N/A"
 
         results.append(
             {

@@ -333,8 +333,10 @@ class ConfigLoader:
         # Generate test ID
         test_id = (
             f"{test_type}_{test_category}_file:{test_file_name}_{benchmark_type}_"
+            f"ctx:{fields['ctx_num']}_gen:{fields['gen_num']}_"
             f"{fields['dep_flag']}:{fields['gen_tp_size']}_bs:{fields['gen_batch_size']}_"
-            f"mtp:{fields['mtp_size']}_ccbackend:{fields['cache_transceiver_backend']}"
+            f"eplb:{fields['eplb_slots']}_mtp:{fields['mtp_size']}_"
+            f"ccbackend:{fields['cache_transceiver_backend']}"
         )
 
         return test_id
