@@ -106,12 +106,12 @@ class AccuracyConfig:
 
 
 # Accuracy test uses accuracy_eval.log (markdown table output from lm_eval)
-_COMMON_ACCURACY_CONFIG = MetricsConfig(
+# Note: Only log_file is used by AccuracyParser (accuracy_parser.py)
+# The regex pattern is hardcoded in AccuracyParser._extract_accuracy_values()
+_COMMON_ACCURACY_METRICS = MetricsConfig(
     log_file="accuracy_eval.log",
-    # Regex to match lm_eval markdown table output
-    # Format: |gsm8k|3|flexible-extract|5|exact_match|↑|0.9454|±|0.0063|
-    extractor_pattern=r'\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|',
-    metric_names=["ACCURACY"],
+    extractor_pattern= r'\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|', 
+    metric_names=["flexible-extract", "strict-match"],  
 )
 
 DEFAULT_METRICS_CONFIG = {
@@ -164,8 +164,8 @@ DEFAULT_METRICS_CONFIG = {
         ],
     ),
     # Accuracy test configuration
-    ("disagg", "accuracy"): _COMMON_ACCURACY_CONFIG,
-    ("wideep", "accuracy"): _COMMON_ACCURACY_CONFIG,
+    ("disagg", "accuracy"): _COMMON_ACCURACY_METRICS,
+    ("wideep", "accuracy"): _COMMON_ACCURACY_METRICS,
 }
 
 
@@ -442,8 +442,9 @@ class ConfigLoader:
             raise ValueError(f"No default metrics config for config_key: {config_key}")
 
         # Check if there are metrics overrides in YAML
-        benchmark_config = config_data.get("benchmark", {})
-        metrics_override = benchmark_config.get("metrics")
+        # Metrics are defined in metadata section instead of benchmark
+        metadata_config = config_data.get("metadata", {})
+        metrics_override = metadata_config.get("metrics")
 
         if metrics_override:
             # There are metrics overrides, merge them

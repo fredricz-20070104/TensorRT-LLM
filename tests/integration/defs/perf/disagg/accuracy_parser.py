@@ -198,7 +198,7 @@ class AccuracyParser:
         # Regex to match table rows
         # Format: |dataset|version|filter|n-shot|metric|arrow|value|±|stderr|
         pattern = re.compile(
-            r'\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|',
+            self.metrics_config.extractor_pattern,
             re.IGNORECASE
         )
 
@@ -214,7 +214,7 @@ class AccuracyParser:
                 continue
 
             # Only keep flexible-extract and strict-match filters
-            if filter_type not in ['flexible-extract', 'strict-match']:
+            if filter_type not in self.metrics_config.metric_names:
                 continue
 
             # Check if this dataset already exists in current run
