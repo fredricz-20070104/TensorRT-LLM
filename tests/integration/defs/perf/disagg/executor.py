@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from common import GPU_RESOURCE_CONFIG, SESSION_COLLECT_CMD_TYPE, EnvManager, extract_config_fields
+from common import GPU_RESOURCE_CONFIG, SESSION_COLLECT_CMD_TYPE, EnvManager, \
+    extract_config_fields, DEBUG_MODE
 from report import LogParser, LogWriter, ResultSaver
 from trt_test_alternative import call, check_output
 
@@ -371,9 +372,11 @@ class JobManager:
         # Backup logs and config files
         JobManager.backup_logs(job_id, test_config, result_dir, is_passed)
 
-        # TODO: revert this section back after debugging
         # Clean up result directory
-        # JobManager.cleanup_result_dir(result_dir)
+        if DEBUG_MODE:
+            print(f"🐛 Debug mode: Skipping result directory cleanup: {result_dir}")
+        else:
+            JobManager.cleanup_result_dir(result_dir)
 
         return check_result
 
