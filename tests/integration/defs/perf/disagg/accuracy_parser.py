@@ -2,8 +2,9 @@
 
 import os
 import re
-from typing import Any, Dict, List
+from typing import Dict, List
 
+from accuracy_types import AccuracyValidationResult, DatasetValidation, RunValidation
 from config_loader import AccuracyConfig, MetricsConfig
 
 
@@ -22,58 +23,65 @@ class AccuracyParser:
         self.accuracy_config = accuracy_config
         self.result_dir = result_dir
 
-    def parse_and_validate(self) -> Dict[str, Any]:
+    def parse_and_validate(self) -> AccuracyValidationResult:
         """Parse accuracy_eval.log and validate all configured datasets for all runs.
 
         Supports multiple runs (e.g., pre-benchmark and post-benchmark).
         All runs must pass for the validation to succeed.
 
         Returns:
-            Dictionary with validation results:
-                - success: bool - Whether parsing succeeded
-                - all_passed: bool - Whether ALL runs passed ALL validations
-                - runs: list - List of validation results for each run
-                - raw_results: list - Raw parsed accuracy values for each run
-                - error: str - Error message if parsing failed
+            AccuracyValidationResult with validation results for all runs
         """
         log_file = os.path.join(self.result_dir, self.metrics_config.log_file)
 
         if not os.path.exists(log_file):
-            return {"success": False, "error": f"Log file not found: {log_file}"}
+            return {
+                "success": False,
+                "all_passed": False,
+                "runs": [],
+                "raw_results": [],
+                "error": f"Log file not found: {log_file}"
+            }
 
         # Read log file
         try:
             with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
                 log_content = f.read()
         except Exception as e:
-            return {"success": False, "error": f"Failed to read log file: {e}"}
+            return {
+                "success": False,
+                "all_passed": False,
+                "runs": [],
+                "raw_results": [],
+                "error": f"Failed to read log file: {e}"
+            }
 
         # Extract accuracy values for all runs
         all_runs_results = self._extract_accuracy_values(log_content)
 
         if not all_runs_results:
-            return {"success": False, "error": "No accuracy values found in log"}
+            return {
+                "success": False,
+                "all_passed": False,
+                "runs": [],
+                "raw_results": [],
+                "error": "No accuracy values found in log"
+            }
 
         print(f"   📊 Found {len(all_runs_results)} accuracy test run(s)")
 
-        # TODO: Simplify and understand the logic here
         # Validate each run
-        runs_validation = []
+        runs_validation: List[RunValidation] = []
         all_runs_passed = True
 
         for run_idx, parsed_results in enumerate(all_runs_results):
             run_id = f"run-{run_idx + 1}"
-            if run_idx == 0:
-                run_name = "Pre-benchmark" if len(all_runs_results) > 1 else "Single run"
-            elif run_idx == 1:
-                run_name = "Post-benchmark"
-            else:
-                run_name = f"Run {run_idx + 1}"
+            run_name = f"Run {run_idx + 1}"
 
             print(f"   📊 Validating {run_name}: {parsed_results}")
 
             # Validate all datasets for this run
-            validation_results = []
+            validation_results: List[DatasetValidation] = []
             run_passed = True
 
             for dataset_config in self.accuracy_config.datasets:
@@ -81,11 +89,19 @@ class AccuracyParser:
 
                 # Check if dataset result was found in log
                 if dataset_name not in parsed_results:
-                    validation_results.append({
-                        "dataset": dataset_config.dataset_name,
-                        "passed": False,
-                        "error": f"Dataset {dataset_config.dataset_name} not found in {run_name}"
-                    })
+                    validation_results.append(
+                        DatasetValidation(
+                            dataset=dataset_config.dataset_name,
+                            filter="",
+                            passed=False,
+                            actual=0.0,
+                            expected=dataset_config.expected_value,
+                            threshold=dataset_config.threshold,
+                            threshold_type=dataset_config.threshold_type,
+                            message="",
+                            error=f"Dataset {dataset_config.dataset_name} not found in {run_name}"
+                        )
+                    )
                     run_passed = False
                     continue
 
@@ -94,37 +110,49 @@ class AccuracyParser:
                 filter_type = dataset_config.filter_type
 
                 if filter_type not in filter_results:
-                    validation_results.append({
-                        "dataset": dataset_config.dataset_name,
-                        "passed": False,
-                        "error": f"Filter '{filter_type}' not found for dataset {dataset_config.dataset_name} in {run_name}"
-                    })
+                    validation_results.append(
+                        DatasetValidation(
+                            dataset=dataset_config.dataset_name,
+                            filter=filter_type,
+                            passed=False,
+                            actual=0.0,
+                            expected=dataset_config.expected_value,
+                            threshold=dataset_config.threshold,
+                            threshold_type=dataset_config.threshold_type,
+                            message="",
+                            error=f"Filter '{filter_type}' not found for dataset {dataset_config.dataset_name} in {run_name}"
+                        )
+                    )
                     run_passed = False
                     continue
 
                 actual_value = filter_results[filter_type]
                 passed, msg = dataset_config.validate(actual_value)
 
-                validation_results.append({
-                    "dataset": dataset_config.dataset_name,
-                    "filter": filter_type,
-                    "passed": passed,
-                    "actual": actual_value,
-                    "expected": dataset_config.expected_value,
-                    "threshold": dataset_config.threshold,
-                    "threshold_type": dataset_config.threshold_type,
-                    "message": msg
-                })
+                validation_results.append(
+                    DatasetValidation(
+                        dataset=dataset_config.dataset_name,
+                        filter=filter_type,
+                        passed=passed,
+                        actual=actual_value,
+                        expected=dataset_config.expected_value,
+                        threshold=dataset_config.threshold,
+                        threshold_type=dataset_config.threshold_type,
+                        message=msg
+                    )
+                )
 
                 if not passed:
                     run_passed = False
 
-            runs_validation.append({
-                "run_id": run_id,
-                "run_name": run_name,
-                "all_passed": run_passed,
-                "results": validation_results
-            })
+            runs_validation.append(
+                RunValidation(
+                    run_id=run_id,
+                    run_name=run_name,
+                    all_passed=run_passed,
+                    results=validation_results
+                )
+            )
 
             if not run_passed:
                 all_runs_passed = False
