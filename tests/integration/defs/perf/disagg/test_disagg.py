@@ -35,7 +35,10 @@ def _ensure_session_end():
 
 
 # Register atexit handler
-atexit.register(_ensure_session_end)
+if not DEBUG_MODE:
+    atexit.register(_ensure_session_end)
+else:
+    print(f"🐛 Debug mode: Skipping atexit handler: {DEBUG_JOB_ID}")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -45,7 +48,10 @@ def session_lifecycle():
     try:
         yield
     finally:
-        _ensure_session_end()
+        if not DEBUG_MODE:
+            _ensure_session_end()
+        else:
+            print(f"🐛 Debug mode: Skipping session cleanup: {DEBUG_JOB_ID}")
 
 
 class TestDisaggBenchmark:
