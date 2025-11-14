@@ -2,7 +2,7 @@
 
 import os
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 DEBUG_JOB_ID = "908390"
 
 SESSION_COLLECT_CMD_TYPE = "session_collect"
