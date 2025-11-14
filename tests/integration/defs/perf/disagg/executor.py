@@ -370,8 +370,10 @@ class JobManager:
         is_passed = check_result["success"]
         # Backup logs and config files
         JobManager.backup_logs(job_id, test_config, result_dir, is_passed)
+
+        # TODO: revert this section back after debugging
         # Clean up result directory
-        JobManager.cleanup_result_dir(result_dir)
+        # JobManager.cleanup_result_dir(result_dir)
 
         return check_result
 
