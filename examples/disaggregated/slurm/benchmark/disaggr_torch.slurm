@@ -227,21 +227,6 @@ srun -l --container-name=${container_name} \
     bash ${work_dir}/start_server.sh ${num_ctx_servers} ${num_gen_servers} ${full_logdir} ${work_dir} \
     &> ${full_logdir}/output_server.log &
 
-# Run accuracy evaluation if enabled
-if [ "${enable_accuracy_test}" = "true" ]; then
-    echo "Starting accuracy evaluation..."
-    if ! srun -l --container-name=${container_name} \
-        --container-mounts=${container_mount} \
-        --mpi=pmix --overlap -N 1 -n 1 \
-        bash ${work_dir}/accuracy_eval.sh \
-        "${full_logdir}" "${accuracy_model}" "${accuracy_tasks}" "${model_path}" \
-        "${model_args_extra}" \
-        &> ${full_logdir}/accuracy_eval.log; then
-        cleanup_on_failure "Accuracy evaluation failed. Check ${full_logdir}/accuracy_eval.log for details"
-    fi
-    echo "Accuracy evaluation completed successfully"
-fi
-
 # Start benchmarking
 echo "Starting benchmark..."
 if [ "${use_nv_sa_benchmark}" = "true" ]; then
@@ -266,6 +251,21 @@ else
     fi
 fi
 echo "Benchmark completed successfully"
+
+# Run accuracy evaluation if enabled
+if [ "${enable_accuracy_test}" = "true" ]; then
+    echo "Starting accuracy evaluation..."
+    if ! srun -l --container-name=${container_name} \
+        --container-mounts=${container_mount} \
+        --mpi=pmix --overlap -N 1 -n 1 \
+        bash ${work_dir}/accuracy_eval.sh \
+        "${full_logdir}" "${accuracy_model}" "${accuracy_tasks}" "${model_path}" \
+        "${model_args_extra}" \
+        &> ${full_logdir}/accuracy_eval.log; then
+        cleanup_on_failure "Accuracy evaluation failed. Check ${full_logdir}/accuracy_eval.log for details"
+    fi
+    echo "Accuracy evaluation completed successfully"
+fi
 
 echo "Total runtime: $SECONDS seconds"
 
