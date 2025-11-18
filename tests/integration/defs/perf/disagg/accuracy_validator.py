@@ -1,0 +1,353 @@
+"""Accuracy validation classes and dataset threshold configurations."""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+
+import scipy.stats
+
+
+def compute_theta(num_samples: int,
+                  sigma: float,
+                  alpha: float = 0.05,
+                  beta: float = 0.2) -> float:
+    """Compute theta (minimum detectable effect) for hypothesis testing.
+    
+    Args:
+        num_samples: Number of samples
+        sigma: Standard deviation
+        alpha: Type I error (false positive rate)
+        beta: Type II error (false negative rate)
+        
+    Returns:
+        Theta value
+    """
+    scale = (2 * sigma**2 / num_samples)**0.5
+    
+    # Single-tail testing
+    z_alpha = scipy.stats.norm.ppf(alpha)
+    z_beta = scipy.stats.norm.ppf(beta)
+    theta = -(z_alpha + z_beta) * scale
+    return theta
+
+
+def compute_threshold(num_samples: int,
+                      ref_accuracy: float,
+                      sigma: float,
+                      alpha: float = 0.05,
+                      higher_is_better: bool = True) -> float:
+    """Compute threshold for hypothesis testing.
+    
+    Args:
+        num_samples: Number of samples
+        ref_accuracy: Reference accuracy value
+        sigma: Standard deviation
+        alpha: Type I error (false positive rate)
+        higher_is_better: Whether higher accuracy is better
+        
+    Returns:
+        Threshold value
+    """
+    scale = (2 * sigma**2 / num_samples)**0.5
+    
+    # Single-tail testing
+    z_alpha = scipy.stats.norm.ppf(alpha)
+    if higher_is_better:
+        return ref_accuracy + z_alpha * scale
+    else:
+        return ref_accuracy - z_alpha * scale
+
+
+@dataclass
+class HypothesisTestingParams:
+    """Parameters for hypothesis testing validation."""
+    
+    ref_accuracy: float
+    num_samples: int
+    alpha: float = 0.05
+    beta: float = 0.2
+    sigma: float = 50.0
+    higher_is_better: bool = True
+    theta: float = field(init=False)
+    threshold: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Compute theta and threshold after initialization."""
+        self.theta = compute_theta(
+            self.num_samples,
+            sigma=self.sigma,
+            alpha=self.alpha,
+            beta=self.beta
+        )
+        self.threshold = compute_threshold(
+            self.num_samples,
+            self.ref_accuracy,
+            sigma=self.sigma,
+            alpha=self.alpha,
+            higher_is_better=self.higher_is_better
+        )
+
+
+# Dataset default parameters for hypothesis testing
+# Extracted from accuracy_core.py AccuracyTask subclasses
+DATASET_DEFAULTS = {
+    "gsm8k": {
+        "alpha": 0.05,
+        "beta": 0.2,
+        "sigma": 50,
+        "num_samples": 1319,
+        "higher_is_better": True
+    },
+    "mmlu": {
+        "alpha": 0.05,
+        "beta": 0.2,
+        "sigma": 50,
+        "num_samples": 4096,
+        "higher_is_better": True
+    },
+    "humaneval": {
+        "alpha": 0.002,
+        "beta": 0.2,
+        "sigma": 15.08,
+        "num_samples": 164,
+        "higher_is_better": True
+    },
+    "cnn_dailymail": {
+        "alpha": 0.002,
+        "beta": 0.2,
+        "sigma": 11.06,
+        "num_samples": 512,
+        "higher_is_better": True
+    },
+    "gpqa_diamond": {
+        "alpha": 0.05,
+        "beta": 0.2,
+        "sigma": 50,
+        "num_samples": 198,
+        "higher_is_better": True
+    },
+    "json_mode_eval": {
+        "alpha": 0.05,
+        "beta": 0.2,
+        "sigma": 50,
+        "num_samples": 100,
+        "higher_is_better": True
+    },
+    "mmmu": {
+        "alpha": 0.05,
+        "beta": 0.2,
+        "sigma": 50,
+        "num_samples": 900,
+        "higher_is_better": True
+    },
+    "passkey_retrieval_64k": {
+        "alpha": 0.5,
+        "beta": 0.2,
+        "sigma": 0,
+        "num_samples": 20,
+        "higher_is_better": True
+    },
+    "passkey_retrieval_128k": {
+        "alpha": 0.5,
+        "beta": 0.2,
+        "sigma": 0,
+        "num_samples": 20,
+        "higher_is_better": True
+    },
+    "zero_scrolls": {
+        "alpha": 0.002,
+        "beta": 0.2,
+        "sigma": 6.97,
+        "num_samples": 80,
+        "higher_is_better": True
+    },
+    "slimpajama-6b": {
+        "alpha": 0.01,
+        "beta": 0.2,
+        "sigma": 4.48,
+        "num_samples": 86,
+        "higher_is_better": False
+    },
+}
+
+
+class DatasetValidator(ABC):
+    """Abstract base class for dataset validators."""
+
+    @abstractmethod
+    def validate(self, actual_value: float) -> tuple[bool, str]:
+        """Validate actual value against expected value.
+
+        Args:
+            actual_value: Actual accuracy value from test
+            expected_value: Expected accuracy value
+
+        Returns:
+            Tuple of (passed, message): Whether validation passed and detail message
+        """
+        pass
+
+
+class RelativeValidator(DatasetValidator):
+    """Validator using relative error threshold."""
+
+    def __init__(self, expected_value: float, threshold: float):
+        """Initialize RelativeValidator.
+
+        Args:
+            threshold: Relative error threshold (e.g., 0.02 for 2%)
+        """
+        self.expected_value = expected_value
+        self.threshold = threshold
+
+    def validate(self, actual_value: float) -> tuple[bool, str]:
+        """Validate using relative error.
+
+        Args:
+            actual_value: Actual accuracy value from test
+            expected_value: Expected accuracy value
+
+        Returns:
+            Tuple of (passed, message)
+        """
+        # Convert to percentage for display if in decimal form
+        display_actual = actual_value * 100 if actual_value <= 1.0 else actual_value
+        display_expected = self.expected_value * 100 if self.expected_value <= 1.0 else self.expected_value
+        
+        # Calculate relative error
+        if self.expected_value == 0:
+            error = abs(actual_value)
+        else:
+            error = abs(actual_value - self.expected_value) / abs(self.expected_value)
+        
+        passed = error <= self.threshold
+        error_pct = error * 100  # Convert to percentage for display
+        threshold_pct = self.threshold * 100
+        
+        msg = (f"Relative error: {error_pct:.2f}% (threshold: {threshold_pct:.2f}%), "
+               f"actual={display_actual:.2f}%, expected={display_expected:.2f}%")
+        return passed, msg
+
+
+class HypothesisTestValidator(DatasetValidator):
+    """Validator using hypothesis testing."""
+
+    def __init__(self, expected_value: float, alpha: float, beta: float,
+                 sigma: float, num_samples: int, higher_is_better: bool = True):
+        """Initialize HypothesisTestValidator.
+
+        Args:
+            expected_value: Expected (reference) accuracy value
+            alpha: Type I error (false positive rate)
+            beta: Type II error (false negative rate)
+            sigma: Standard deviation
+            num_samples: Number of samples
+            higher_is_better: Whether higher accuracy is better
+        """
+        self.params = HypothesisTestingParams(
+            ref_accuracy=expected_value,
+            alpha=alpha,
+            beta=beta,
+            sigma=sigma,
+            num_samples=num_samples,
+            higher_is_better=higher_is_better
+        )
+
+    def validate(self, actual_value: float) -> tuple[bool, str]:
+        """Validate using hypothesis testing.
+
+        Args:
+            actual_value: Actual accuracy value from test
+            expected_value: Expected accuracy value (for display consistency)
+
+        Returns:
+            Tuple of (passed, message)
+        """
+        # Convert to percentage if value is in decimal form (0-1 range)
+        # This handles cases where accuracy is reported as 0.9435 instead of 94.35
+        display_actual = actual_value * 100 if actual_value <= 1.0 else actual_value
+        display_expected = self.params.ref_accuracy * 100 if self.params.ref_accuracy <= 1.0 else self.params.ref_accuracy
+        display_threshold = self.params.threshold * 100 if self.params.threshold <= 1.0 else self.params.threshold
+        
+        compare_op = ">=" if self.params.higher_is_better else "<="
+        
+        # Check if passes threshold (use original values for comparison)
+        if self.params.higher_is_better:
+            passed = actual_value >= self.params.threshold
+        else:
+            passed = actual_value <= self.params.threshold
+        
+        # Build message with percentage format for readability
+        msg = (f"Hypothesis test: actual={display_actual:.2f}%, "
+               f"expected={display_expected:.2f}%, "
+               f"threshold={display_threshold:.2f}%, "
+               f"required: {compare_op} threshold")
+        
+        return passed, msg
+
+
+@dataclass
+class DatasetThreshold:
+    """Accuracy threshold configuration for a single dataset."""
+
+    dataset_name: str  # Dataset name: gsm8k, mmlu, humaneval, etc.
+    expected_value: float  # Expected accuracy value
+    threshold: float  # Threshold value (for relative) or ignored (for hypothesis_test)
+    threshold_type: str  # "relative" or "hypothesis_test"
+    filter_type: str = "flexible-extract"  # lm_eval filter type
+    
+    # Optional hypothesis testing parameters (override defaults from DATASET_DEFAULTS)
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    sigma: Optional[float] = None
+    num_samples: Optional[int] = None
+    higher_is_better: Optional[bool] = None
+
+    def _get_hypothesis_params(self) -> Dict[str, any]:
+        """Get hypothesis testing parameters, using defaults if not specified.
+        
+        Returns:
+            Dict with alpha, beta, sigma, num_samples, higher_is_better
+        """
+        # Get defaults for this dataset
+        dataset_key = self.dataset_name.lower()
+        defaults = DATASET_DEFAULTS.get(dataset_key, {})
+        
+        # Override with specified values
+        return {
+            "alpha": self.alpha if self.alpha is not None else defaults.get("alpha", 0.05),
+            "beta": self.beta if self.beta is not None else defaults.get("beta", 0.2),
+            "sigma": self.sigma if self.sigma is not None else defaults.get("sigma", 50),
+            "num_samples": self.num_samples if self.num_samples is not None else defaults.get("num_samples", 1000),
+            "higher_is_better": self.higher_is_better if self.higher_is_better is not None else defaults.get("higher_is_better", True),
+        }
+
+    def validate(self, actual_value: float) -> tuple[bool, str]:
+        """Validate if accuracy passes the threshold.
+
+        Args:
+            actual_value: Actual accuracy value from test
+
+        Returns:
+            Tuple of (passed, message): Whether validation passed and detail message
+        """
+        # Create appropriate validator based on threshold_type
+        if self.threshold_type == "relative":
+            validator = RelativeValidator(expected_value=self.expected_value, threshold=self.threshold)
+        elif self.threshold_type == "hypothesis_test":
+            params = self._get_hypothesis_params()
+            validator = HypothesisTestValidator(
+                expected_value=self.expected_value,
+                alpha=params["alpha"],
+                beta=params["beta"],
+                sigma=params["sigma"],
+                num_samples=params["num_samples"],
+                higher_is_better=params["higher_is_better"]
+            )
+        else:
+            # For backward compatibility: treat unknown types as relative
+            validator = RelativeValidator(expected_value=self.expected_value, threshold=self.threshold)
+        
+        # Delegate validation to the validator
+        return validator.validate(actual_value)
+

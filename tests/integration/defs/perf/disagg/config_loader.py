@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from accuracy_validator import DatasetThreshold
 from common import EnvManager, extract_config_fields
 
 
@@ -36,41 +37,6 @@ class MetricsConfig:
                                            self.extractor_pattern),
             metric_names=override.get("metric_names", self.metric_names),
         )
-
-
-@dataclass
-class DatasetThreshold:
-    """Accuracy threshold configuration for a single dataset."""
-
-    dataset_name: str  # Dataset name: gsm8k, mmlu, humaneval, etc.
-    expected_value: float  # Expected accuracy value
-    threshold: float  # Threshold value
-    threshold_type: str  # "relative" or "absolute"
-    filter_type: str = "flexible-extract"  # lm_eval filter type
-
-    def validate(self, actual_value: float) -> tuple[bool, str]:
-        """Validate if accuracy passes the threshold.
-
-        Args:
-            actual_value: Actual accuracy value from test
-
-        Returns:
-            Tuple of (passed, message): Whether validation passed and detail message
-        """
-        if self.threshold_type == "relative":
-            if self.expected_value == 0:
-                error = abs(actual_value)
-            else:
-                error = abs(actual_value - self.expected_value) / abs(
-                    self.expected_value)
-            passed = error <= self.threshold
-            msg = f"Relative error: {error:.6f} (threshold: {self.threshold})"
-        else:  # absolute
-            error = self.expected_value - actual_value
-            passed = error <= 2.326 * self.threshold
-            msg = f"Absolute error: {error:.6f} (threshold: {self.threshold})"
-
-        return passed, msg
 
 
 @dataclass
@@ -387,6 +353,25 @@ class ConfigLoader:
             if acc_meta and 'datasets' in acc_meta:
                 datasets = []
                 for ds_config in acc_meta['datasets']:
+                    # Parse optional hypothesis testing parameters
+                    alpha = ds_config.get('alpha')
+                    beta = ds_config.get('beta')
+                    sigma = ds_config.get('sigma')
+                    num_samples = ds_config.get('num_samples')
+                    higher_is_better = ds_config.get('higher_is_better')
+                    
+                    # Convert to appropriate types if present
+                    if alpha is not None:
+                        alpha = float(alpha)
+                    if beta is not None:
+                        beta = float(beta)
+                    if sigma is not None:
+                        sigma = float(sigma)
+                    if num_samples is not None:
+                        num_samples = int(num_samples)
+                    if higher_is_better is not None:
+                        higher_is_better = bool(higher_is_better)
+                    
                     datasets.append(
                         DatasetThreshold(
                             dataset_name=ds_config.get('name', 'gsm8k'),
@@ -396,7 +381,12 @@ class ConfigLoader:
                             threshold_type=ds_config.get(
                                 'threshold_type', 'relative'),
                             filter_type=ds_config.get('filter_type',
-                                                      'flexible-extract')))
+                                                      'flexible-extract'),
+                            alpha=alpha,
+                            beta=beta,
+                            sigma=sigma,
+                            num_samples=num_samples,
+                            higher_is_better=higher_is_better))
                 accuracy_config = AccuracyConfig(datasets=datasets)
                 print(
                     f"   📊 Loaded accuracy config with {len(datasets)} dataset(s)"
