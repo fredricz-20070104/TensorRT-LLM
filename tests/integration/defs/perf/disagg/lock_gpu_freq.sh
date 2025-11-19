@@ -14,6 +14,7 @@
 # Example: lock_gpu_freq.sh 3996 1965
 #
 
+# TODO: remove this one - lock gpu freq
 set -e
 
 GRAPHICS_MHZ=${1:-0}

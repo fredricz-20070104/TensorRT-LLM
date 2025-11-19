@@ -2,6 +2,7 @@
 
 import os
 
+# TODO: ENV
 DEBUG_MODE = False
 DEBUG_JOB_ID = "908390"
 
@@ -68,6 +69,7 @@ class EnvManager:
 
     @staticmethod
     def get_script_dir() -> str:
+        # TODO: use placeholder here, replace default as empty string
         return os.getenv("SCRIPT_DIR", "/code/bench-sa/scripts")
 
     @staticmethod
@@ -84,6 +86,7 @@ class EnvManager:
 
     @staticmethod
     def get_model_dir() -> str:
+        # TODO: use placeholder here
         return os.getenv("MODEL_DIR", "/lustre/fsw/portfolios/coreai/users/xqiao")
 
     @staticmethod

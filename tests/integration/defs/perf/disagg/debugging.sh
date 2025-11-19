@@ -1,4 +1,6 @@
 
+# TODO: move this one to conflunce page
+
 # How to collect the entire test list
 # Please apply the corresponding env file under ./envs before collect the test list
 
@@ -11,6 +13,7 @@ $env:SKIP="clang-format"
 pre-commit run --all-files
 
 
+# TODO: remove absolute path
 # Local test cases collect
 export WORK_DIR="/mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg"
 export OUTPUT_PATH=/mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg/output

@@ -17,6 +17,7 @@ from common import (
     extract_config_fields,
 )
 from report import LogParser, LogWriter, ResultSaver
+# TODO: remove this one ---  trt_test_alternative
 from trt_test_alternative import call, check_output
 
 # ============================================================================
@@ -302,6 +303,7 @@ class JobManager:
         if os.path.exists(result_dir):
             try:
                 shutil.rmtree(result_dir)
+                # TODO: make a log class and remove icons
                 print(f"   ✅ Result directory removed: {result_dir}")
                 return True
             except Exception as e:

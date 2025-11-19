@@ -361,6 +361,7 @@ class ConfigLoader:
                     if higher_is_better is not None:
                         higher_is_better = bool(higher_is_better)
 
+                    # TODO: remove relative threshold support
                     datasets.append(
                         DatasetThreshold(
                             dataset_name=ds_config.get("name", "gsm8k"),

@@ -30,6 +30,8 @@ sequence:
   input_length: 1024
   output_length: 1024
 environment:
+  # TODO: use placeholder here
+  # TODO: Generate deepseek-r1-fp4_007_temp.yaml, remove it after test
   container_mount: /mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg:/mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg,/lustre/fsw/portfolios/coreai/users/fredric/tensorrt_llm/examples/disaggregated/slurm/benchmark:/lustre/fsw/portfolios/coreai/users/fredric/tensorrt_llm/examples/disaggregated/slurm/benchmark,/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common:/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common,/mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg/output:/mnt/c/code/TensorRT-LLM/tests/integration/defs/perf/disagg/output
   container_image: /lustre/fsw/portfolios/coreai/users/deemod/TRTLLM-7952/deemod+trtllm-2956978da3bf-aarch64-20251023.sqsh
   model_path: /lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common/DeepSeek-R1-0528-FP4-V2
