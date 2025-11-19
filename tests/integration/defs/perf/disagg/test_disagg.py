@@ -3,7 +3,7 @@
 import atexit
 
 import pytest
-from common import CONFIG_BASE_DIR, DEBUG_JOB_ID, DEBUG_MODE
+from common import CONFIG_BASE_DIR, EnvManager
 from config_loader import ConfigLoader, TestConfig
 from executor import JobManager
 from trackers import TestCaseTracker, session_tracker
@@ -34,10 +34,10 @@ def _ensure_session_end():
 
 
 # Register atexit handler
-if not DEBUG_MODE:
+if not EnvManager.get_debug_mode():
     atexit.register(_ensure_session_end)
 else:
-    print(f"🐛 Debug mode: Skipping atexit handler: {DEBUG_JOB_ID}")
+    print(f"🐛 Debug mode: Skipping atexit handler: {EnvManager.get_debug_job_id()}")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -47,10 +47,10 @@ def session_lifecycle():
     try:
         yield
     finally:
-        if not DEBUG_MODE:
+        if not EnvManager.get_debug_mode():
             _ensure_session_end()
         else:
-            print(f"🐛 Debug mode: Skipping session cleanup: {DEBUG_JOB_ID}")
+            print(f"🐛 Debug mode: Skipping session cleanup: {EnvManager.get_debug_job_id()}")
 
 
 class TestDisaggBenchmark:
@@ -81,9 +81,9 @@ class TestDisaggBenchmark:
             print(f"Metrics log: {test_config.metrics_config.log_file}")
             print(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
             print(f"{'=' * 60}")
-            if DEBUG_MODE:
-                print(f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}")
-                job_id = DEBUG_JOB_ID
+            if EnvManager.get_debug_mode():
+                print(f"🐛 Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager
                 success, job_id = JobManager.submit_job(test_config)
@@ -151,9 +151,9 @@ class TestDisaggBenchmark:
             print(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
             print(f"{'=' * 60}")
 
-            if DEBUG_MODE:
-                print(f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}")
-                job_id = DEBUG_JOB_ID
+            if EnvManager.get_debug_mode():
+                print(f"🐛 Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager
                 success, job_id = JobManager.submit_job(test_config)

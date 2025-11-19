@@ -10,7 +10,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 from common import (
-    DEBUG_MODE,
     GPU_RESOURCE_CONFIG,
     SESSION_COLLECT_CMD_TYPE,
     EnvManager,
@@ -379,7 +378,7 @@ class JobManager:
         JobManager.backup_logs(job_id, test_config, result_dir, is_passed)
 
         # Clean up result directory
-        if DEBUG_MODE:
+        if EnvManager.get_debug_mode():
             print(f"🐛 Debug mode: Skipping result directory cleanup: {result_dir}")
         else:
             JobManager.cleanup_result_dir(result_dir)

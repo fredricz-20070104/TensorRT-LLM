@@ -2,10 +2,6 @@
 
 import os
 
-# TODO: ENV
-DEBUG_MODE = False
-DEBUG_JOB_ID = "908390"
-
 SESSION_COLLECT_CMD_TYPE = "session_collect"
 
 # GPU resource configuration
@@ -53,11 +49,11 @@ class EnvManager:
 
     @staticmethod
     def get_slurm_partition() -> str:
-        return os.getenv("SLURM_PARTITION", "batch")
+        return os.getenv("SLURM_PARTITION", "<You slurm partition>")
 
     @staticmethod
     def get_slurm_account() -> str:
-        return os.getenv("SLURM_ACCOUNT", "coreai_comparch_trtllm")
+        return os.getenv("SLURM_ACCOUNT", "<You slurm account>")
 
     @staticmethod
     def get_slurm_job_name() -> str:
@@ -69,29 +65,27 @@ class EnvManager:
 
     @staticmethod
     def get_script_dir() -> str:
-        # TODO: use placeholder here, replace default as empty string
-        return os.getenv("SCRIPT_DIR", "/code/bench-sa/scripts")
+        return os.getenv("SCRIPT_DIR", "<Your benchmark script directory>")
 
     @staticmethod
     def get_work_dir() -> str:
-        return os.getenv("WORK_DIR", "/code/bench-sa")
+        return os.getenv("WORK_DIR", "<Your working directory>")
 
     @staticmethod
     def get_repo_dir() -> str:
-        return os.getenv("REPO_DIR", "")
+        return os.getenv("REPO_DIR", "<Your TensorRT-LLM repository directory>")
 
     @staticmethod
     def get_trtllm_wheel_path() -> str:
-        return os.getenv("TRTLLM_WHEEL_PATH", "")
+        return os.getenv("TRTLLM_WHEEL_PATH", "<Your TensorRT-LLM wheel path>")
 
     @staticmethod
     def get_model_dir() -> str:
-        # TODO: use placeholder here
-        return os.getenv("MODEL_DIR", "/lustre/fsw/portfolios/coreai/users/xqiao")
+        return os.getenv("MODEL_DIR", "<Your model and dataset directory>")
 
     @staticmethod
     def get_output_path() -> str:
-        output_path = os.getenv("OUTPUT_PATH", "/home/fredricz/tensorrt-llm-bench")
+        output_path = os.getenv("OUTPUT_PATH", "<The csv and disagg comparison HTML output directory>")
         os.makedirs(output_path, exist_ok=True)
         return output_path
 
@@ -123,6 +117,13 @@ class EnvManager:
             mounts.append(f"{trtllm_wheel_dir}:{trtllm_wheel_dir}")
         return ",".join(mounts)
 
+    @staticmethod
+    def get_debug_mode() -> bool:
+        return os.getenv("DEBUG_MODE", "0") == "1"
+
+    @staticmethod
+    def get_debug_job_id() -> str:
+        return os.getenv("DEBUG_JOB_ID", "908390")
 
 CONFIG_BASE_DIR = os.path.join(EnvManager.get_work_dir(), "test_configs")
 

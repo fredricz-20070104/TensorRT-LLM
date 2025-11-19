@@ -361,13 +361,11 @@ class ConfigLoader:
                     if higher_is_better is not None:
                         higher_is_better = bool(higher_is_better)
 
-                    # TODO: remove relative threshold support
                     datasets.append(
                         DatasetThreshold(
                             dataset_name=ds_config.get("name", "gsm8k"),
                             expected_value=float(ds_config.get("expected_value", 0.0)),
-                            threshold=float(ds_config.get("threshold", 0.02)),
-                            threshold_type=ds_config.get("threshold_type", "relative"),
+                            threshold_type=ds_config.get("threshold_type", "hypothesis_test"),
                             filter_type=ds_config.get("filter_type", "flexible-extract"),
                             alpha=alpha,
                             beta=beta,
