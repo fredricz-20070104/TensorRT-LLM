@@ -91,9 +91,7 @@ if is_linux():
 
         return pids
 
-    def cleanup_process_tree(p: subprocess.Popen,
-                             has_session=False,
-                             verbose_message=False):
+    def cleanup_process_tree(p: subprocess.Popen, has_session=False, verbose_message=False):
         target_pids = set()
         if has_session:
             # Session ID is the pid of the leader process
@@ -101,9 +99,7 @@ if is_linux():
 
         # Backup plan: using ppid to build subprocess tree
         try:
-            target_pids.update(
-                sub.pid
-                for sub in psutil.Process(p.pid).children(recursive=True))
+            target_pids.update(sub.pid for sub in psutil.Process(p.pid).children(recursive=True))
         except psutil.Error:
             pass
 
@@ -122,11 +118,13 @@ if is_linux():
                         cmdline = sp.cmdline()
 
                         # Detect repetitive torch inductor worker processes
-                        if (len(cmdline) > 3 and "python" in cmdline[0]
-                                and "torch/_inductor/compile_worker/__main__.py"
-                                in cmdline[1] and
-                                "--pickler=torch._inductor.compile_worker.subproc_pool.SubprocPickler"
-                                == cmdline[2]):
+                        if (
+                            len(cmdline) > 3
+                            and "python" in cmdline[0]
+                            and "torch/_inductor/compile_worker/__main__.py" in cmdline[1]
+                            and "--pickler=torch._inductor.compile_worker.subproc_pool.SubprocPickler"
+                            == cmdline[2]
+                        ):
                             torch_inductors.append(pid)
                             continue
 
@@ -136,9 +134,7 @@ if is_linux():
                     pass
 
             if torch_inductors:
-                lines.append(
-                    f"{len(torch_inductors)}*torch inductor workers: {torch_inductors}"
-                )
+                lines.append(f"{len(torch_inductors)}*torch inductor workers: {torch_inductors}")
 
             if persist_pids:
                 msg = f"Found leftover subprocesses: {persist_pids} launched by {p.args}"
@@ -160,7 +156,6 @@ elif is_windows():
     import win32job
 
     class MyHandle:
-
         def __init__(self, handle):
             self.handle = handle
 
@@ -187,18 +182,14 @@ elif is_windows():
     def cleanup_process_tree(p: subprocess.Popen, has_session=False):
         target_pids = []
         try:
-            target_pids = [
-                sub.pid
-                for sub in psutil.Process(p.pid).children(recursive=True)
-            ]
+            target_pids = [sub.pid for sub in psutil.Process(p.pid).children(recursive=True)]
         except psutil.Error:
             pass
 
         if has_session and p.job_handle is not None:
             process_exit_code = 3600  # Some obvious special exit code
             try:
-                win32job.TerminateJobObject(p.job_handle.handle,
-                                            process_exit_code)
+                win32job.TerminateJobObject(p.job_handle.handle, process_exit_code)
             except pywintypes.error:
                 pass
 
@@ -213,10 +204,9 @@ elif is_windows():
 
 
 @contextlib.contextmanager
-def popen(*popenargs,
-          start_new_session=True,
-          suppress_output_info=False,
-          **kwargs) -> Generator[subprocess.Popen]:
+def popen(
+    *popenargs, start_new_session=True, suppress_output_info=False, **kwargs
+) -> Generator[subprocess.Popen]:
     if not suppress_output_info:
         print(f"Start subprocess with popen({popenargs}, {kwargs})")
 
@@ -247,10 +237,9 @@ def call(
     poll_procs = poll_procs or []
     if not suppress_output_info:
         print(f"Start subprocess with call({popenargs}, {kwargs})")
-    with popen(*popenargs,
-               start_new_session=start_new_session,
-               suppress_output_info=True,
-               **kwargs) as p:
+    with popen(
+        *popenargs, start_new_session=start_new_session, suppress_output_info=True, **kwargs
+    ) as p:
         elapsed_time = 0
         while True:
             try:
@@ -279,10 +268,9 @@ def check_call(*popenargs, **kwargs):
 
 def check_output(*popenargs, timeout=None, start_new_session=True, **kwargs):
     print(f"Start subprocess with check_output({popenargs}, {kwargs})")
-    with Popen(*popenargs,
-               stdout=subprocess.PIPE,
-               start_new_session=start_new_session,
-               **kwargs) as process:
+    with Popen(
+        *popenargs, stdout=subprocess.PIPE, start_new_session=start_new_session, **kwargs
+    ) as process:
         try:
             stdout, stderr = process.communicate(None, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
@@ -299,10 +287,7 @@ def check_output(*popenargs, timeout=None, start_new_session=True, **kwargs):
         if start_new_session:
             cleanup_process_tree(process, True, True)
         if retcode:
-            raise subprocess.CalledProcessError(retcode,
-                                                process.args,
-                                                output=stdout,
-                                                stderr=stderr)
+            raise subprocess.CalledProcessError(retcode, process.args, output=stdout, stderr=stderr)
     return stdout.decode()
 
 
@@ -338,9 +323,7 @@ def print_error(message: str) -> None:
 
 # custom test checker
 def check_call_negative_test(*popenargs, **kwargs):
-    print(
-        f"Start subprocess with check_call_negative_test({popenargs}, {kwargs})"
-    )
+    print(f"Start subprocess with check_call_negative_test({popenargs}, {kwargs})")
     retcode = call(*popenargs, suppress_output_info=True, **kwargs)
     if retcode:
         return 0

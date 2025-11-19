@@ -14,17 +14,11 @@ ALL_TEST_CONFIGS = config_loader.scan_configs()
 
 # Separate performance and accuracy test configurations
 PERF_TEST_CONFIGS = [c for c in ALL_TEST_CONFIGS if c.test_category == "perf"]
-ACCURACY_TEST_CONFIGS = [
-    c for c in ALL_TEST_CONFIGS if c.test_category == "accuracy"
-]
+ACCURACY_TEST_CONFIGS = [c for c in ALL_TEST_CONFIGS if c.test_category == "accuracy"]
 
 # Convert to pytest parameters
-PERF_TEST_CASES = [
-    pytest.param(config, id=config.test_id) for config in PERF_TEST_CONFIGS
-]
-ACCURACY_TEST_CASES = [
-    pytest.param(config, id=config.test_id) for config in ACCURACY_TEST_CONFIGS
-]
+PERF_TEST_CASES = [pytest.param(config, id=config.test_id) for config in PERF_TEST_CONFIGS]
+ACCURACY_TEST_CASES = [pytest.param(config, id=config.test_id) for config in ACCURACY_TEST_CONFIGS]
 
 # Flag to track if session end has been called
 _session_ended = False
@@ -88,9 +82,7 @@ class TestDisaggBenchmark:
             print(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
             print(f"{'=' * 60}")
             if DEBUG_MODE:
-                print(
-                    f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}"
-                )
+                print(f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}")
                 job_id = DEBUG_JOB_ID
             else:
                 # Submit job using JobManager
@@ -102,12 +94,12 @@ class TestDisaggBenchmark:
 
                 # Wait for completion (with early failure detection)
                 completed, error_msg = JobManager.wait_for_completion(
-                    job_id, 7200, test_config, check_early_failure=True)
+                    job_id, 7200, test_config, check_early_failure=True
+                )
                 if not completed:
                     JobManager.cancel_job(job_id)
                     result_dir = JobManager.get_result_dir(test_config)
-                    JobManager.backup_logs(job_id, test_config, result_dir,
-                                           False)
+                    JobManager.backup_logs(job_id, test_config, result_dir, False)
                     JobManager.cleanup_result_dir(result_dir)
                     # Provide detailed error message
                     if error_msg == "timeout":
@@ -122,8 +114,7 @@ class TestDisaggBenchmark:
             timestamps = test_tracker.get_timestamps()
 
             # Check results and generate report
-            result = JobManager.check_result(job_id, test_config, timestamps,
-                                             full_test_name)
+            result = JobManager.check_result(job_id, test_config, timestamps, full_test_name)
             assert result["success"], f"Performance test failed: {job_id}"
 
         except Exception as e:
@@ -153,8 +144,7 @@ class TestDisaggBenchmark:
 
             # Print configured datasets
             if test_config.accuracy_config:
-                dataset_names = test_config.accuracy_config.get_all_dataset_names(
-                )
+                dataset_names = test_config.accuracy_config.get_all_dataset_names()
                 print(f"Datasets: {', '.join(dataset_names)}")
 
             print(f"Metrics log: {test_config.metrics_config.log_file}")
@@ -162,9 +152,7 @@ class TestDisaggBenchmark:
             print(f"{'=' * 60}")
 
             if DEBUG_MODE:
-                print(
-                    f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}"
-                )
+                print(f"🐛 Debug mode: Skipping job submission, using job_id: {DEBUG_JOB_ID}")
                 job_id = DEBUG_JOB_ID
             else:
                 # Submit job using JobManager
@@ -176,12 +164,12 @@ class TestDisaggBenchmark:
 
                 # Wait for completion (accuracy tests may need more time - 3 hours timeout)
                 completed, error_msg = JobManager.wait_for_completion(
-                    job_id, 7200, test_config, check_early_failure=True)
+                    job_id, 7200, test_config, check_early_failure=True
+                )
                 if not completed:
                     JobManager.cancel_job(job_id)
                     result_dir = JobManager.get_result_dir(test_config)
-                    JobManager.backup_logs(job_id, test_config, result_dir,
-                                           False)
+                    JobManager.backup_logs(job_id, test_config, result_dir, False)
                     JobManager.cleanup_result_dir(result_dir)
                     # Provide detailed error message
                     if error_msg == "timeout":
@@ -195,10 +183,10 @@ class TestDisaggBenchmark:
             # Get timestamps information
             timestamps = test_tracker.get_timestamps()
             # Check results and validate accuracy
-            result = JobManager.check_result(job_id, test_config, timestamps,
-                                             full_test_name)
-            assert result[
-                "success"], f"Accuracy test failed: {result.get('error', 'Unknown error')}"
+            result = JobManager.check_result(job_id, test_config, timestamps, full_test_name)
+            assert result["success"], (
+                f"Accuracy test failed: {result.get('error', 'Unknown error')}"
+            )
 
         except Exception as e:
             test_tracker.end_test_case()

@@ -33,8 +33,7 @@ class MetricsConfig:
 
         return MetricsConfig(
             log_file=override.get("log_file", self.log_file),
-            extractor_pattern=override.get("extractor_pattern",
-                                           self.extractor_pattern),
+            extractor_pattern=override.get("extractor_pattern", self.extractor_pattern),
             metric_names=override.get("metric_names", self.metric_names),
         )
 
@@ -45,8 +44,7 @@ class AccuracyConfig:
 
     datasets: List[DatasetThreshold]  # List of dataset threshold configurations
 
-    def get_dataset_config(self,
-                           dataset_name: str) -> Optional[DatasetThreshold]:
+    def get_dataset_config(self, dataset_name: str) -> Optional[DatasetThreshold]:
         """Get configuration by dataset name.
 
         Args:
@@ -78,15 +76,13 @@ class AccuracyConfig:
 # The regex pattern is hardcoded in AccuracyParser._extract_accuracy_values()
 _COMMON_ACCURACY_METRICS = MetricsConfig(
     log_file="accuracy_eval.log",
-    extractor_pattern=
-    r'\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|',
+    extractor_pattern=r"\|([a-zA-Z0-9_-]+)\|.*?\|([\w-]+)\|.*?\|exact_match\|.*?\|([0-9.]+)\|",
     metric_names=["flexible-extract", "strict-match"],
 )
 
 DEFAULT_METRICS_CONFIG = {
     # Performance test default configuration
-    ("disagg", "perf"):
-    MetricsConfig(
+    ("disagg", "perf"): MetricsConfig(
         log_file="bench.log",
         extractor_pattern=r"""
             ^.*?Median\ TTFT\ \(ms\):\s+([0-9.]+).*?$\n
@@ -97,8 +93,7 @@ DEFAULT_METRICS_CONFIG = {
         """,
         metric_names=["DISAGG_SERVER_TTFT", "DISAGG_SERVER_E2EL"],
     ),
-    ("wideep", "perf"):
-    MetricsConfig(
+    ("wideep", "perf"): MetricsConfig(
         log_file="bench.log",
         extractor_pattern=r"""
             ^.*?Mean\ TTFT\ \(ms\):\s+([0-9.]+).*?$\n
@@ -135,10 +130,8 @@ DEFAULT_METRICS_CONFIG = {
         ],
     ),
     # Accuracy test configuration
-    ("disagg", "accuracy"):
-    _COMMON_ACCURACY_METRICS,
-    ("wideep", "accuracy"):
-    _COMMON_ACCURACY_METRICS,
+    ("disagg", "accuracy"): _COMMON_ACCURACY_METRICS,
+    ("wideep", "accuracy"): _COMMON_ACCURACY_METRICS,
 }
 
 
@@ -155,8 +148,7 @@ class TestConfig:
     config_data: dict  # Full YAML content
     metrics_config: MetricsConfig  # Metrics configuration (default or overridden)
     supported_gpus: List[str]  # Supported GPU types list
-    accuracy_config: Optional[
-        AccuracyConfig] = None  # Accuracy configuration (for accuracy tests)
+    accuracy_config: Optional[AccuracyConfig] = None  # Accuracy configuration (for accuracy tests)
 
     @property
     def display_name(self) -> str:
@@ -175,8 +167,7 @@ class ConfigLoader:
         """
         self.base_dir = Path(base_dir)
         if not self.base_dir.exists():
-            raise FileNotFoundError(
-                f"Config directory not found: {self.base_dir}")
+            raise FileNotFoundError(f"Config directory not found: {self.base_dir}")
 
     def scan_configs(
         self,
@@ -233,9 +224,9 @@ class ConfigLoader:
                 # Load all YAML files in this category
                 for yaml_file in category_dir.glob("*.yaml"):
                     try:
-                        config = self._load_config_file(yaml_file,
-                                                        current_test_type,
-                                                        current_category)
+                        config = self._load_config_file(
+                            yaml_file, current_test_type, current_category
+                        )
 
                         # Filter by model_name
                         if model_name and config.model_name != model_name:
@@ -245,7 +236,8 @@ class ConfigLoader:
                         if gpu_type and gpu_type not in config.supported_gpus:
                             print(
                                 f"   ⏭️  Skipping {yaml_file.name}: not supported on {gpu_type} "
-                                f"(supported: {config.supported_gpus})")
+                                f"(supported: {config.supported_gpus})"
+                            )
                             continue
 
                         configs.append(config)
@@ -273,15 +265,15 @@ class ConfigLoader:
                 f"  1. Configuration files exist in the correct directory structure\n"
                 f"  2. YAML files contain valid 'metadata' section with required fields\n"
                 f"  3. GPU type '{gpu_type}' is in the 'supported_gpus' list\n"
-                f"  4. Filter parameters match existing configurations")
+                f"  4. Filter parameters match existing configurations"
+            )
 
-        print(
-            f"\n✅ Loaded {len(configs)} configurations for GPU type: {gpu_type}"
-        )
+        print(f"\n✅ Loaded {len(configs)} configurations for GPU type: {gpu_type}")
         return configs
 
-    def _make_test_id(self, test_type: str, test_category: str,
-                      test_file_name: str, config_data: dict) -> str:
+    def _make_test_id(
+        self, test_type: str, test_category: str, test_file_name: str, config_data: dict
+    ) -> str:
         """Generate test ID based on test type, test category, test file name and configuration data.
 
         Format: {test_type}_{test_category}_{model_name}_{isl}k{osl}k_
@@ -310,12 +302,12 @@ class ConfigLoader:
             f"ctx:{fields['ctx_num']}_gen:{fields['gen_num']}_"
             f"{fields['dep_flag']}:{fields['gen_tp_size']}_bs:{fields['gen_batch_size']}_"
             f"eplb:{fields['eplb_slots']}_mtp:{fields['mtp_size']}_"
-            f"ccbackend:{fields['cache_transceiver_backend']}")
+            f"ccbackend:{fields['cache_transceiver_backend']}"
+        )
 
         return test_id
 
-    def _load_config_file(self, yaml_path: Path, test_type: str,
-                          test_category: str) -> TestConfig:
+    def _load_config_file(self, yaml_path: Path, test_type: str, test_category: str) -> TestConfig:
         """Load single YAML config file."""
         with open(yaml_path, "r") as f:
             config_data = yaml.safe_load(f)
@@ -323,8 +315,7 @@ class ConfigLoader:
         # Extract metadata from YAML file
         metadata = config_data.get("metadata", {})
         model_name = metadata.get("model_name", "unknown")
-        supported_gpus = metadata.get(
-            "supported_gpus", ["GB200", "GB300", "H100", "B200", "B300"])
+        supported_gpus = metadata.get("supported_gpus", ["GB200", "GB300", "H100", "B200", "B300"])
 
         # Override config with environment variables
         config_data = self._apply_env_overrides(config_data)
@@ -336,30 +327,28 @@ class ConfigLoader:
         benchmark_type = self._generate_benchmark_type(config_data)
 
         # Get metrics config (default or override)
-        metrics_config = self._get_metrics_config(test_type, test_category,
-                                                  config_data)
+        metrics_config = self._get_metrics_config(test_type, test_category, config_data)
 
         # Extract test file name (without extension)
         test_file_name = yaml_path.stem  # e.g., "deepseek-r1-fp4-0"
 
         # Generate test ID using config data
-        test_id = self._make_test_id(test_type, test_category, test_file_name,
-                                     config_data)
+        test_id = self._make_test_id(test_type, test_category, test_file_name, config_data)
 
         # Load accuracy configuration (only for accuracy tests)
         accuracy_config = None
         if test_category == "accuracy":
-            acc_meta = metadata.get('accuracy', {})
-            if acc_meta and 'datasets' in acc_meta:
+            acc_meta = metadata.get("accuracy", {})
+            if acc_meta and "datasets" in acc_meta:
                 datasets = []
-                for ds_config in acc_meta['datasets']:
+                for ds_config in acc_meta["datasets"]:
                     # Parse optional hypothesis testing parameters
-                    alpha = ds_config.get('alpha')
-                    beta = ds_config.get('beta')
-                    sigma = ds_config.get('sigma')
-                    num_samples = ds_config.get('num_samples')
-                    higher_is_better = ds_config.get('higher_is_better')
-                    
+                    alpha = ds_config.get("alpha")
+                    beta = ds_config.get("beta")
+                    sigma = ds_config.get("sigma")
+                    num_samples = ds_config.get("num_samples")
+                    higher_is_better = ds_config.get("higher_is_better")
+
                     # Convert to appropriate types if present
                     if alpha is not None:
                         alpha = float(alpha)
@@ -371,26 +360,23 @@ class ConfigLoader:
                         num_samples = int(num_samples)
                     if higher_is_better is not None:
                         higher_is_better = bool(higher_is_better)
-                    
+
                     datasets.append(
                         DatasetThreshold(
-                            dataset_name=ds_config.get('name', 'gsm8k'),
-                            expected_value=float(
-                                ds_config.get('expected_value', 0.0)),
-                            threshold=float(ds_config.get('threshold', 0.02)),
-                            threshold_type=ds_config.get(
-                                'threshold_type', 'relative'),
-                            filter_type=ds_config.get('filter_type',
-                                                      'flexible-extract'),
+                            dataset_name=ds_config.get("name", "gsm8k"),
+                            expected_value=float(ds_config.get("expected_value", 0.0)),
+                            threshold=float(ds_config.get("threshold", 0.02)),
+                            threshold_type=ds_config.get("threshold_type", "relative"),
+                            filter_type=ds_config.get("filter_type", "flexible-extract"),
                             alpha=alpha,
                             beta=beta,
                             sigma=sigma,
                             num_samples=num_samples,
-                            higher_is_better=higher_is_better))
+                            higher_is_better=higher_is_better,
+                        )
+                    )
                 accuracy_config = AccuracyConfig(datasets=datasets)
-                print(
-                    f"   📊 Loaded accuracy config with {len(datasets)} dataset(s)"
-                )
+                print(f"   📊 Loaded accuracy config with {len(datasets)} dataset(s)")
 
         return TestConfig(
             config_path=str(yaml_path),
@@ -429,8 +415,9 @@ class ConfigLoader:
 
         return f"{input_k}k{output_k}k"
 
-    def _get_metrics_config(self, test_type: str, test_category: str,
-                            config_data: dict) -> MetricsConfig:
+    def _get_metrics_config(
+        self, test_type: str, test_category: str, config_data: dict
+    ) -> MetricsConfig:
         """Get metrics config: use default or merge with override.
 
         Args:
@@ -445,11 +432,8 @@ class ConfigLoader:
         default_config = DEFAULT_METRICS_CONFIG.get(config_key)
         if not default_config:
             # If no default configuration, trigger exception
-            print(
-                f"   ⚠️  No default metrics config for config_key: {config_key}"
-            )
-            raise ValueError(
-                f"No default metrics config for config_key: {config_key}")
+            print(f"   ⚠️  No default metrics config for config_key: {config_key}")
+            raise ValueError(f"No default metrics config for config_key: {config_key}")
 
         # Check if there are metrics overrides in YAML
         # Metrics are defined in metadata section instead of benchmark
@@ -483,28 +467,17 @@ class ConfigLoader:
         # Field path mapping: (path, key) -> environment value getter
         # Uses lazy evaluation to get values only when needed
         field_mapping = {
-            ("slurm", "partition"):
-            lambda: EnvManager.get_slurm_partition(),
-            ("slurm", "account"):
-            lambda: EnvManager.get_slurm_account(),
-            ("slurm", "job_name"):
-            lambda: EnvManager.get_slurm_job_name(),
-            ("environment", "container_mount"):
-            lambda: EnvManager.get_container_mount(),
-            ("environment", "container_image"):
-            lambda: EnvManager.get_container_image(),
-            ("environment", "trtllm_repo"):
-            lambda: EnvManager.get_repo_dir(),
-            ("environment", "trtllm_wheel_path"):
-            lambda: EnvManager.get_trtllm_wheel_path(),
-            ("environment", "dataset_file"):
-            lambda: self._get_dataset_file(config),
-            ("environment", "work_dir"):
-            lambda: EnvManager.get_script_dir(),
-            ("environment", "model_path"):
-            lambda: self._get_full_model_path(config),
-            ("slurm", "script_file"):
-            lambda: self._get_script_file(config),
+            ("slurm", "partition"): lambda: EnvManager.get_slurm_partition(),
+            ("slurm", "account"): lambda: EnvManager.get_slurm_account(),
+            ("slurm", "job_name"): lambda: EnvManager.get_slurm_job_name(),
+            ("environment", "container_mount"): lambda: EnvManager.get_container_mount(),
+            ("environment", "container_image"): lambda: EnvManager.get_container_image(),
+            ("environment", "trtllm_repo"): lambda: EnvManager.get_repo_dir(),
+            ("environment", "trtllm_wheel_path"): lambda: EnvManager.get_trtllm_wheel_path(),
+            ("environment", "dataset_file"): lambda: self._get_dataset_file(config),
+            ("environment", "work_dir"): lambda: EnvManager.get_script_dir(),
+            ("environment", "model_path"): lambda: self._get_full_model_path(config),
+            ("slurm", "script_file"): lambda: self._get_script_file(config),
         }
 
         # Apply overrides based on field paths
@@ -570,8 +543,7 @@ class ConfigLoader:
                 )
             print(f"   ✅ Updated config written to: {yaml_path.name}")
         except Exception as e:
-            print(
-                f"   ⚠️  Warning: Failed to write config file {yaml_path}: {e}")
+            print(f"   ⚠️  Warning: Failed to write config file {yaml_path}: {e}")
             # Don't fail the test if write fails, just log warning
 
     def get_all_models(self) -> List[str]:
@@ -583,7 +555,6 @@ class ConfigLoader:
         """Get list of all test types."""
         if not self.base_dir.exists():
             return []
-        return sorted([
-            d.name for d in self.base_dir.iterdir()
-            if d.is_dir() and d.name != "templates"
-        ])
+        return sorted(
+            [d.name for d in self.base_dir.iterdir() if d.is_dir() and d.name != "templates"]
+        )
