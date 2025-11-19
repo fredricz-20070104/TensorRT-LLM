@@ -72,6 +72,12 @@ class HypothesisTestingParams:
 
     def __post_init__(self) -> None:
         """Compute theta and threshold after initialization."""
+        # Ensure unit consistency: if ref_accuracy is in decimal form (0-1)
+        # and sigma is in percentage form (e.g., 50), convert ref_accuracy to percentage
+        # This matches the convention in accuracy_core.py where ref_accuracy is stored as percentage
+        if self.ref_accuracy <= 1.0 and self.sigma > 1.0:
+            self.ref_accuracy = self.ref_accuracy * 100
+        
         self.theta = compute_theta(
             self.num_samples, sigma=self.sigma, alpha=self.alpha, beta=self.beta
         )
@@ -264,25 +270,32 @@ class HypothesisTestValidator(DatasetValidator):
         Returns:
             Tuple of (passed, message)
         """
-        # Convert to percentage if value is in decimal form (0-1 range)
-        # This handles cases where accuracy is reported as 0.9435 instead of 94.35
+        # Normalize actual_value to same unit as ref_accuracy/threshold
+        # If ref_accuracy is in percentage (>1.0) and actual_value is in decimal (<=1.0), convert actual_value
+        compare_actual = actual_value
+        if self.params.ref_accuracy > 1.0 and actual_value <= 1.0:
+            compare_actual = actual_value * 100
+        
+        # For display: always show as percentage
         display_actual = actual_value * 100 if actual_value <= 1.0 else actual_value
         display_expected = (
-            self.params.ref_accuracy * 100
-            if self.params.ref_accuracy <= 1.0
-            else self.params.ref_accuracy
+            self.params.ref_accuracy
+            if self.params.ref_accuracy > 1.0
+            else self.params.ref_accuracy * 100
         )
         display_threshold = (
-            self.params.threshold * 100 if self.params.threshold <= 1.0 else self.params.threshold
+            self.params.threshold
+            if self.params.ref_accuracy > 1.0  # Use ref_accuracy to infer unit
+            else self.params.threshold * 100
         )
 
         compare_op = ">=" if self.params.higher_is_better else "<="
 
-        # Check if passes threshold (use original values for comparison)
+        # Check if passes threshold (use normalized values for comparison)
         if self.params.higher_is_better:
-            passed = actual_value >= self.params.threshold
+            passed = compare_actual >= self.params.threshold
         else:
-            passed = actual_value <= self.params.threshold
+            passed = compare_actual <= self.params.threshold
 
         # Build message with percentage format for readability
         msg = (
