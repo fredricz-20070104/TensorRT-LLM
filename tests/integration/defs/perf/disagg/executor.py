@@ -643,7 +643,7 @@ class JobManager:
                 else:
                     print(f"         Expected: {ds_result.expected:.4f}")
                     print(f"         Actual:   {ds_result.actual:.4f}")
-                    print(f"         Threshold: {ds_result.threshold} ({ds_result.threshold_type})")
+                    print(f"         Threshold type:  {ds_result.threshold_type}")
                     print(f"         {ds_result.message}")
 
         # Set result status

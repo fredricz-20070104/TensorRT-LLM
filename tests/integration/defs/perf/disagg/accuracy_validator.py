@@ -272,22 +272,12 @@ class HypothesisTestValidator(DatasetValidator):
         """
         # Normalize actual_value to same unit as ref_accuracy/threshold
         # If ref_accuracy is in percentage (>1.0) and actual_value is in decimal (<=1.0), convert actual_value
-        compare_actual = actual_value
-        if self.params.ref_accuracy > 1.0 and actual_value <= 1.0:
-            compare_actual = actual_value * 100
+        compare_actual = actual_value * 100
         
         # For display: always show as percentage
-        display_actual = actual_value * 100 if actual_value <= 1.0 else actual_value
-        display_expected = (
-            self.params.ref_accuracy
-            if self.params.ref_accuracy > 1.0
-            else self.params.ref_accuracy * 100
-        )
-        display_threshold = (
-            self.params.threshold
-            if self.params.ref_accuracy > 1.0  # Use ref_accuracy to infer unit
-            else self.params.threshold * 100
-        )
+        display_actual = compare_actual
+        display_expected = self.params.ref_accuracy
+        display_threshold = self.params.threshold
 
         compare_op = ">=" if self.params.higher_is_better else "<="
 
