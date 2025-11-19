@@ -13,7 +13,6 @@ metadata:
     datasets:
     - dataset_name: gsm8k
       expected_value: 0.9454
-      threshold: 0.0063
       threshold_type: hypothesis_test
       filter_type: flexible-extract
 
