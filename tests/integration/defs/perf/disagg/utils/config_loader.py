@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
-from reporting.accuracy_types import DatasetThreshold
-from utils.common import EnvManager, extract_config_fields
+from reporting.accuracy_validator import DatasetThreshold
+from utils.common import EnvManager
 from utils.logger import logger
 
 

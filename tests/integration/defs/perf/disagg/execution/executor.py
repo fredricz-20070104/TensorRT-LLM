@@ -11,13 +11,13 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from utils import (
+from utils.common import (
     GPU_RESOURCE_CONFIG,
     SESSION_COLLECT_CMD_TYPE,
     EnvManager,
     extract_config_fields,
-    logger,
 )
+from utils.logger import logger
 from reporting.report import LogParser, ResultSaver, LogWriter
 from execution.subprocess_utils import exec_cmd, exec_cmd_with_output
 
@@ -656,7 +656,7 @@ class JobManager:
             return result
 
         # Import and use AccuracyParser
-        from reporting import AccuracyParser
+        from reporting.accuracy_parser import AccuracyParser
 
         accuracy_parser = AccuracyParser(metrics_config, accuracy_config, result_dir)
         validation_result = accuracy_parser.parse_and_validate()
