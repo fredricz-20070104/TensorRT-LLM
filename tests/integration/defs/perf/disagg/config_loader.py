@@ -141,6 +141,7 @@ class TestConfig:
     """Test configuration data class."""
 
     config_path: str  # YAML file path
+    temp_config_path: str  # Temporary config file path (pre-calculated, not created yet)
     test_id: str  # Auto-generated test ID
     test_type: str  # disagg, widep, etc.
     model_name: str  # Model name (read from metadata)
@@ -306,11 +307,8 @@ class ConfigLoader:
         model_name = metadata.get("model_name", "unknown")
         supported_gpus = metadata.get("supported_gpus", ["GB200", "GB300", "H100", "B200", "B300"])
 
-        # Override config with environment variables
+        # Override config with environment variables (in memory only, do not write back)
         config_data = self._apply_env_overrides(config_data)
-
-        # Write back the updated config to the original file
-        self._write_config_file(yaml_path, config_data)
 
         # Generate benchmark_type from sequence configuration
         benchmark_type = self._generate_benchmark_type(config_data)
@@ -323,6 +321,10 @@ class ConfigLoader:
 
         # Generate test ID using config data
         test_id = self._make_test_id(test_type, test_category, test_file_name)
+
+        # Pre-calculate temporary config file path (not created yet, will be created in submit_job)
+        temp_filename = f"{yaml_path.stem}-temp.yaml"
+        temp_config_path = str(yaml_path.parent / temp_filename)
 
         # Load accuracy configuration (only for accuracy tests)
         accuracy_config = None
@@ -368,6 +370,7 @@ class ConfigLoader:
 
         return TestConfig(
             config_path=str(yaml_path),
+            temp_config_path=temp_config_path,
             test_id=test_id,
             test_type=test_type,
             model_name=model_name,

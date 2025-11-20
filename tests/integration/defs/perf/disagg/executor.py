@@ -9,6 +9,8 @@ import shutil
 import time
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from common import (
     GPU_RESOURCE_CONFIG,
     SESSION_COLLECT_CMD_TYPE,
@@ -202,10 +204,25 @@ class JobManager:
         try:
             import re
 
-            # Call submit.py with the config file
-            submit_script = os.path.join(EnvManager.get_script_dir(), "submit.py")
+            # Get pre-calculated temporary config file path from test_config
+            temp_config_path = test_config.temp_config_path
 
-            cmd = ["python3", submit_script, "-c", test_config.config_path]
+            # Write temporary config file with replaced environment variables
+            logger.info(f"Creating temporary config: {temp_config_path}")
+            with open(temp_config_path, "w") as f:
+                yaml.dump(
+                    test_config.config_data,
+                    f,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    width=1000,
+                )
+            logger.success(f"Temporary config created: {os.path.basename(temp_config_path)}")
+
+            # Call submit.py with the temporary config file
+            submit_script = os.path.join(EnvManager.get_script_dir(), "submit.py")
+            cmd = ["python3", submit_script, "-c", temp_config_path]
 
             logger.info(f"Command: {' '.join(cmd)}")
 
@@ -222,6 +239,9 @@ class JobManager:
                     return True, job_id
 
             logger.error("Unable to extract job ID from output")
+            # Clean up temporary file if submission failed
+            if os.path.exists(temp_config_path):
+                os.remove(temp_config_path)
             return False, ""
 
         except Exception as e:
@@ -230,10 +250,19 @@ class JobManager:
             if hasattr(e, "stderr") and e.stderr:
                 error_msg = e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
             logger.error(f"Job submission exception: {error_msg}")
+            # Clean up temporary file on exception
+            temp_config_path = test_config.temp_config_path
+            if os.path.exists(temp_config_path):
+                os.remove(temp_config_path)
             return False, error_msg
 
     @staticmethod
-    def backup_logs(job_id: str, test_config, result_dir: str, is_passed: bool) -> Optional[str]:
+    def backup_logs(
+        job_id: str,
+        test_config,
+        result_dir: str,
+        is_passed: bool,
+    ) -> Optional[str]:
         """Backup logs and config files to test_id directory.
 
         Args:
@@ -244,36 +273,48 @@ class JobManager:
         Returns:
             backup_dir path if successful, None otherwise
         """
-        # Copy result_dir to a timestamped backup directory
-        if os.path.exists(result_dir):
-            # Replace colons with underscores for safe directory naming
-            dst_dir_name = test_config.test_id.replace(":", "-")
-            # Add ERROR suffix if the job failed
-            if not is_passed:
-                dst_dir_name = f"{dst_dir_name}_ERROR"
-            backup_dir = os.path.join(os.path.dirname(result_dir), dst_dir_name)
+        if not os.path.exists(result_dir):
+            logger.warning(f"Result directory does not exist yet: {result_dir}")
+            return None
 
-            try:
-                logger.info("Copying result directory to backup...")
-                logger.info(f"Source: {result_dir}")
-                logger.info(f"Destination: {backup_dir}")
+        # Replace colons with hyphens for safe directory naming
+        dst_dir_name = test_config.test_id.replace(":", "-")
+        # Add ERROR suffix if the job failed
+        if not is_passed:
+            dst_dir_name = f"{dst_dir_name}_ERROR"
+        backup_dir = os.path.join(os.path.dirname(result_dir), dst_dir_name)
 
-                # Remove old backup if it exists
-                if os.path.exists(backup_dir):
-                    logger.warning("Backup directory already exists, removing old backup")
-                    shutil.rmtree(backup_dir)
+        try:
+            logger.info("Copying result directory to backup...")
+            logger.info(f"Source: {result_dir}")
+            logger.info(f"Destination: {backup_dir}")
 
-                shutil.copytree(result_dir, backup_dir)
-                logger.success(f"Backup created successfully: {backup_dir}")
+            # Remove old backup if it exists
+            if os.path.exists(backup_dir):
+                logger.warning("Backup directory already exists, removing old backup")
+                shutil.rmtree(backup_dir)
 
-                work_dir = EnvManager.get_work_dir()
-                slurm_out_file = os.path.join(work_dir, f"slurm-{job_id}.out")
-                if os.path.exists(slurm_out_file):
-                    shutil.copy(slurm_out_file, backup_dir)
-                    logger.success(f"SLURM log copied successfully: {slurm_out_file}")
-                else:
-                    logger.warning(f"SLURM log not found: {slurm_out_file}")
+            # Copy result directory
+            shutil.copytree(result_dir, backup_dir)
+            logger.success(f"Backup created successfully: {backup_dir}")
 
+            # Copy SLURM log file
+            work_dir = EnvManager.get_work_dir()
+            slurm_out_file = os.path.join(work_dir, f"slurm-{job_id}.out")
+            if os.path.exists(slurm_out_file):
+                shutil.copy(slurm_out_file, backup_dir)
+                logger.success(f"SLURM log copied successfully: {slurm_out_file}")
+            else:
+                logger.warning(f"SLURM log not found: {slurm_out_file}")
+
+            # Move temporary config file to backup directory (not copy)
+            temp_config_path = test_config.temp_config_path
+            if os.path.exists(temp_config_path):
+                dest_path = os.path.join(backup_dir, os.path.basename(temp_config_path))
+                shutil.move(temp_config_path, dest_path)
+                logger.success(f"Temporary config moved to backup: {dest_path}")
+            else:
+                # Fallback: copy original config if no temp file (backward compatibility)
                 case_config_path = test_config.config_path
                 if os.path.exists(case_config_path):
                     shutil.copy(case_config_path, backup_dir)
@@ -281,12 +322,18 @@ class JobManager:
                 else:
                     logger.warning(f"Case config not found: {case_config_path}")
 
-                return backup_dir
-            except Exception as e:
-                logger.warning(f"Failed to create backup copy: {e}")
-                return None
-        else:
-            logger.warning(f"Result directory does not exist yet: {result_dir}")
+            return backup_dir
+
+        except Exception as e:
+            logger.warning(f"Failed to create backup copy: {e}")
+            # Try to clean up temporary file on backup failure
+            temp_config_path = test_config.temp_config_path
+            if os.path.exists(temp_config_path):
+                try:
+                    os.remove(temp_config_path)
+                    logger.info(f"Cleaned up temp config after backup failure: {temp_config_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temp config: {cleanup_error}")
             return None
 
     @staticmethod
