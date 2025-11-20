@@ -3,11 +3,11 @@
 import atexit
 
 import pytest
-from common import CONFIG_BASE_DIR, EnvManager
-from config_loader import ConfigLoader, TestConfig
-from executor import JobManager
-from logger import logger
-from trackers import TestCaseTracker, session_tracker
+from utils.common import CONFIG_BASE_DIR, EnvManager
+from utils.config_loader import ConfigLoader, TestConfig
+from utils.logger import logger
+from utils.trackers import TestCaseTracker, session_tracker
+from execution.executor import JobManager
 
 # Load all test configurations
 config_loader = ConfigLoader(base_dir=CONFIG_BASE_DIR)

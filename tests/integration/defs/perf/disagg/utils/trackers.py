@@ -3,9 +3,11 @@ from datetime import datetime
 from typing import Dict
 
 import pandas as pd
-from common import SESSION_COLLECT_CMD_TYPE, EnvManager
-from executor import run_job
-from logger import logger
+from utils.common import SESSION_COLLECT_CMD_TYPE, EnvManager
+from utils.logger import logger
+
+# Import run_job from execution (cross-package import)
+from execution.executor import run_job
 
 
 class TestCaseTracker:

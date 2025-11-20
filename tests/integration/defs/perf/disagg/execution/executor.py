@@ -11,15 +11,15 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from common import (
+from utils import (
     GPU_RESOURCE_CONFIG,
     SESSION_COLLECT_CMD_TYPE,
     EnvManager,
     extract_config_fields,
+    logger,
 )
-from logger import logger
-from report import LogParser, LogWriter, ResultSaver
-from subprocess_utils import exec_cmd, exec_cmd_with_output
+from reporting.report import LogParser, ResultSaver, LogWriter
+from execution.subprocess_utils import exec_cmd, exec_cmd_with_output
 
 # ============================================================================
 # SLURM Run Command Builder
@@ -656,7 +656,7 @@ class JobManager:
             return result
 
         # Import and use AccuracyParser
-        from accuracy_parser import AccuracyParser
+        from reporting import AccuracyParser
 
         accuracy_parser = AccuracyParser(metrics_config, accuracy_config, result_dir)
         validation_result = accuracy_parser.parse_and_validate()

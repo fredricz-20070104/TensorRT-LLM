@@ -5,8 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from common import GPU_RESOURCE_CONFIG, EnvManager
-from logger import logger
+from utils import GPU_RESOURCE_CONFIG, EnvManager, logger
 
 
 class LogWriter(object):

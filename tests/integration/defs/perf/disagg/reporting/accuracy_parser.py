@@ -4,9 +4,9 @@ import os
 import re
 from typing import Dict, List
 
-from accuracy_types import AccuracyValidationResult, DatasetValidation, RunValidation
-from config_loader import AccuracyConfig, MetricsConfig
-from logger import logger
+from reporting.accuracy_types import AccuracyValidationResult, DatasetValidation, RunValidation
+from utils.config_loader import AccuracyConfig, MetricsConfig
+from utils.logger import logger
 
 
 class AccuracyParser:
