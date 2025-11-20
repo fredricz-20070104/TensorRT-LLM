@@ -8,6 +8,7 @@ metadata:
   script_file: disaggr_torch.slurm
   benchmark_type: 8k1k
   config_index: 14
+  dataset_file: datasets/deepseek-r1-8192-1024-200000-ratio-1_for_serve.json
 
 # SLURM Configuration
 slurm:

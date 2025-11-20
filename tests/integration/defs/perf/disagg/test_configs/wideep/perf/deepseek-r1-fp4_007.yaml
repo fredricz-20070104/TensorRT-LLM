@@ -8,6 +8,7 @@ metadata:
   script_file: disaggr_torch.slurm
   benchmark_type: 8k1k
   config_index: 7
+  dataset_file: datasets/deepseek-r1-8192-1024-200000-ratio-1_for_serve.json
 slurm:
   script_file: /lustre/fsw/portfolios/coreai/users/fredric/tensorrt_llm/examples/disaggregated/slurm/benchmark/disaggr_torch.slurm
   partition: batch
@@ -15,7 +16,6 @@ slurm:
   job_time: 02:00:00
   job_name: unified-benchmark
   numa_bind: true
-  dataset_file: datasets/deepseek-r1-8192-1024-200000-ratio-1_for_serve.json
 benchmark:
   mode: gen_only
   use_nv_sa_benchmark: false
