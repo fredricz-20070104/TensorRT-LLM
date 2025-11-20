@@ -273,38 +273,26 @@ class ConfigLoader:
         return configs
 
     def _make_test_id(
-        self, test_type: str, test_category: str, test_file_name: str, config_data: dict
-    ) -> str:
-        """Generate test ID based on test type, test category, test file name and configuration data.
+        self, test_type: str, test_category: str, test_file_name: str) -> str:
+        """Generate test ID from test type, category, and filename.
 
-        Format: {test_type}_{test_category}_{model_name}_{isl}k{osl}k_
-        {dep_flag}{gen_tp_size}_bs{gen_batch_size}_mtp{mtp_size}
-        Example: disagg_perf_deepseek-r1-fp4_1k1k_dep32_bs32_mtp3
+        Since YAML filenames now contain all configuration info in a standardized format,
+        we simply combine test_type, test_category, and the filename.
+
+        Format: {test_type}_{test_category}_{test_file_name}
+        Example: disagg_perf_deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_ccb-NIXL
 
         Args:
             test_type: Test type (disagg, widep, etc.)
             test_category: Test category (perf, accuracy)
-            test_file_name: Test file name (without extension)
-            config_data: YAML configuration data
+            test_file_name: Test file name (without extension, contains all config info)
 
         Returns:
             Generated test ID string
         """
-        # Extract configuration fields
-        fields = extract_config_fields(config_data)
-        # Generate benchmark type (e.g., 1k1k, 8k1k)
-        isl_k = fields["isl"] // 1024
-        osl_k = fields["osl"] // 1024
-        benchmark_type = f"{isl_k}k{osl_k}k"
-
-        # Generate test ID
-        test_id = (
-            f"{test_type}_{test_category}_file:{test_file_name}_{benchmark_type}_"
-            f"ctx:{fields['ctx_num']}_gen:{fields['gen_num']}_"
-            f"{fields['dep_flag']}:{fields['gen_tp_size']}_bs:{fields['gen_batch_size']}_"
-            f"eplb:{fields['eplb_slots']}_mtp:{fields['mtp_size']}_"
-            f"ccbackend:{fields['cache_transceiver_backend']}"
-        )
+        # Simplified: just combine test_type, test_category, and filename
+        # The filename already contains all necessary configuration details
+        test_id = f"{test_type}_{test_category}_{test_file_name}"
 
         return test_id
 
@@ -334,7 +322,7 @@ class ConfigLoader:
         test_file_name = yaml_path.stem  # e.g., "deepseek-r1-fp4-0"
 
         # Generate test ID using config data
-        test_id = self._make_test_id(test_type, test_category, test_file_name, config_data)
+        test_id = self._make_test_id(test_type, test_category, test_file_name)
 
         # Load accuracy configuration (only for accuracy tests)
         accuracy_config = None

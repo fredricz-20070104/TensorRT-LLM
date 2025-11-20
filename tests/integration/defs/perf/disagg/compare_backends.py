@@ -8,32 +8,25 @@ import sys
 import pandas as pd
 
 
-def normalize_test_name(test_name):
-    """Remove number suffixes (e.g., _001, _015) from test_name.
-
-    Example: deepseek-r1-fp4_015_8k1k -> deepseek-r1-fp4_8k1k
-    """
-    # Match model_XXX_ format, remove XXX number
-    pattern = r"(_\d{3}_)"
-    normalized = re.sub(pattern, "_", test_name)
-    return normalized
-
-
 def extract_backend(test_name):
-    """Extract backend type from test_name."""
-    match = re.search(r"ccbackend:(\w+)", test_name)
+    """Extract backend type from test_name.
+
+    New format: ccb-NIXL or ccb-UCX
+    Example: disagg_perf_deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_ccb-NIXL
+    """
+    match = re.search(r"ccb-(\w+)", test_name)
     return match.group(1) if match else None
 
 
 def extract_base_case_name(test_name):
-    """Extract standardized case name (remove backend information and number suffix)."""
-    # Standardize by removing number suffix first
-    normalized = normalize_test_name(test_name)
+    """Extract standardized case name (remove backend information).
 
-    # Remove ccbackend part, keep other parameters
-    # Replace ccbackend:XXX with ccbackend:BACKEND
-    pattern = r"ccbackend:\w+"
-    base_case = re.sub(pattern, "ccbackend:BACKEND", normalized)
+    Replace ccb-XXX with ccb-BACKEND to create a common base name for grouping.
+    Example: disagg_perf_deepseek-r1-fp4_1k1k_..._ccb-NIXL -> disagg_perf_deepseek-r1-fp4_1k1k_..._ccb-BACKEND
+    """
+    # Replace ccb-XXX with ccb-BACKEND to normalize
+    pattern = r"ccb-\w+"
+    base_case = re.sub(pattern, "ccb-BACKEND", test_name)
 
     return base_case
 
@@ -59,8 +52,8 @@ def compare_backends(csv_path, threshold=5.0, default_backend="NIXL"):
         sys.exit(0)
 
     # Filter only keep tests related to disagg_perf
-    # Determine from test_name field
-    df = df[df["test_name"].str.contains("disagg_perf_file:", na=False)]
+    # Determine from test_name field (new format: disagg_perf_{model_name}_...)
+    df = df[df["test_name"].str.contains("disagg_perf_", na=False)]
     if len(df) == 0:
         print(f"No disagg_perf tests found in CSV file: {csv_path}")
         sys.exit(0)
