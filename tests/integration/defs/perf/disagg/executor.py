@@ -15,9 +15,9 @@ from common import (
     EnvManager,
     extract_config_fields,
 )
+from logger import logger
 from report import LogParser, LogWriter, ResultSaver
-# TODO: remove this one ---  trt_test_alternative
-from trt_test_alternative import call, check_output
+from subprocess_utils import exec_cmd, exec_cmd_with_output
 
 # ============================================================================
 # SLURM Run Command Builder
@@ -157,7 +157,7 @@ class SlurmRunCommandBuilder:
 
             # Execute with optional log file
             if log_file:
-                print(f"   📝 Saving output to: {log_file}")
+                logger.info(f"Saving output to: {log_file}")
                 # Use Python file redirection to avoid shell quoting issues
                 import subprocess
 
@@ -167,14 +167,14 @@ class SlurmRunCommandBuilder:
                     )
                     if result.returncode != 0:
                         raise subprocess.CalledProcessError(result.returncode, full_command)
-                print(f"   ✅ Output saved to {log_file}")
+                logger.success(f"Output saved to {log_file}")
                 output = ""  # Output is in file
             else:
-                output = check_output(full_command, timeout=7200)
+                output = exec_cmd_with_output(full_command, timeout=7200)
 
             return {"status": True, "msg": "Job executed successfully", "output": output}
         except Exception as e:
-            print(f"Job execution failed: {e}")
+            logger.error(f"Job execution failed: {e}")
             return {"status": False, "msg": str(e)}
 
 
@@ -197,7 +197,7 @@ class JobManager:
         Returns:
             tuple: (success: bool, job_id: str)
         """
-        print("🚀 Submitting job using submit.py...")
+        logger.info("Submitting job using submit.py...")
 
         try:
             import re
@@ -207,21 +207,21 @@ class JobManager:
 
             cmd = ["python3", submit_script, "-c", test_config.config_path]
 
-            print(f"   Command: {' '.join(cmd)}")
+            logger.info(f"Command: {' '.join(cmd)}")
 
-            # Execute submission using check_output
-            output = check_output(cmd, timeout=60)
-            print(f"   Output: {output}")
+            # Execute submission
+            output = exec_cmd_with_output(cmd, timeout=60)
+            logger.info(f"Output: {output}")
 
             # Parse job ID from output
             if "Submitted batch job" in output:
                 match = re.search(r"Submitted batch job (\d+)", output)
                 if match:
                     job_id = match.group(1)
-                    print(f"   ✅ Job submitted successfully: {job_id}")
+                    logger.success(f"Job submitted successfully: {job_id}")
                     return True, job_id
 
-            print("   ❌ Unable to extract job ID from output")
+            logger.error("Unable to extract job ID from output")
             return False, ""
 
         except Exception as e:
@@ -229,7 +229,7 @@ class JobManager:
             # Extract stderr from CalledProcessError if available
             if hasattr(e, "stderr") and e.stderr:
                 error_msg = e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
-            print(f"   ❌ Job submission exception: {error_msg}")
+            logger.error(f"Job submission exception: {error_msg}")
             return False, error_msg
 
     @staticmethod
@@ -254,39 +254,39 @@ class JobManager:
             backup_dir = os.path.join(os.path.dirname(result_dir), dst_dir_name)
 
             try:
-                print("   📦 Copying result directory to backup...")
-                print(f"   📁 Source: {result_dir}")
-                print(f"   📁 Destination: {backup_dir}")
+                logger.info("Copying result directory to backup...")
+                logger.info(f"Source: {result_dir}")
+                logger.info(f"Destination: {backup_dir}")
 
                 # Remove old backup if it exists
                 if os.path.exists(backup_dir):
-                    print("   ⚠️  Warning: Backup directory already exists, removing old backup")
+                    logger.warning("Backup directory already exists, removing old backup")
                     shutil.rmtree(backup_dir)
 
                 shutil.copytree(result_dir, backup_dir)
-                print(f"   ✅ Backup created successfully: {backup_dir}")
+                logger.success(f"Backup created successfully: {backup_dir}")
 
                 work_dir = EnvManager.get_work_dir()
                 slurm_out_file = os.path.join(work_dir, f"slurm-{job_id}.out")
                 if os.path.exists(slurm_out_file):
                     shutil.copy(slurm_out_file, backup_dir)
-                    print(f"   ✅ SLURM log copied successfully: {slurm_out_file}")
+                    logger.success(f"SLURM log copied successfully: {slurm_out_file}")
                 else:
-                    print(f"   ⚠️  Warning: SLURM log not found: {slurm_out_file}")
+                    logger.warning(f"SLURM log not found: {slurm_out_file}")
 
                 case_config_path = test_config.config_path
                 if os.path.exists(case_config_path):
                     shutil.copy(case_config_path, backup_dir)
-                    print(f"   ✅ Case config copied successfully: {case_config_path}")
+                    logger.success(f"Case config copied successfully: {case_config_path}")
                 else:
-                    print(f"   ⚠️  Warning: Case config not found: {case_config_path}")
+                    logger.warning(f"Case config not found: {case_config_path}")
 
                 return backup_dir
             except Exception as e:
-                print(f"   ⚠️  Warning: Failed to create backup copy: {e}")
+                logger.warning(f"Failed to create backup copy: {e}")
                 return None
         else:
-            print(f"   ⚠️  Warning: Result directory does not exist yet: {result_dir}")
+            logger.warning(f"Result directory does not exist yet: {result_dir}")
             return None
 
     @staticmethod
@@ -302,11 +302,10 @@ class JobManager:
         if os.path.exists(result_dir):
             try:
                 shutil.rmtree(result_dir)
-                # TODO: make a log class and remove icons
-                print(f"   ✅ Result directory removed: {result_dir}")
+                logger.success(f"Result directory removed: {result_dir}")
                 return True
             except Exception as e:
-                print(f"   ⚠️  Warning: Failed to remove result directory: {e}")
+                logger.warning(f"Failed to remove result directory: {e}")
                 return False
         return True
 
@@ -328,8 +327,8 @@ class JobManager:
         context_dir = fields["context_dir"]
         log_dir_name = log_base
 
-        print(f"   📁 Log directory: {log_dir_name}")
-        print(f"   📁 Context directory: {context_dir}")
+        logger.info(f"Log directory: {log_dir_name}")
+        logger.info(f"Context directory: {context_dir}")
 
         result_dir = os.path.join(EnvManager.get_script_dir(), log_dir_name, context_dir)
         return result_dir
@@ -379,7 +378,7 @@ class JobManager:
 
         # Clean up result directory
         if EnvManager.get_debug_mode():
-            print(f"🐛 Debug mode: Skipping result directory cleanup: {result_dir}")
+            logger.debug(f"Debug mode: Skipping result directory cleanup: {result_dir}")
         else:
             JobManager.cleanup_result_dir(result_dir)
 
@@ -431,13 +430,13 @@ class JobManager:
                                         if re.search(pattern, recent_content, re.MULTILINE):
                                             return True, f"{error_msg} in {filename}"
                             except Exception as e:
-                                print(f"   ⚠️  Warning: Failed to check {filename}: {e}")
+                                logger.warning(f"Failed to check {filename}: {e}")
             except Exception:
                 # result_dir might not exist yet, that's OK
                 pass
 
         except Exception as e:
-            print(f"   ⚠️  Warning: Error during early failure check: {e}")
+            logger.warning(f"Error during early failure check: {e}")
 
         return False, None
 
@@ -446,7 +445,7 @@ class JobManager:
         """Check job status using sacct (works for all job states)."""
         try:
             # Use sacct to get job status - works for both running and completed jobs
-            sacct_output = check_output(
+            sacct_output = exec_cmd_with_output(
                 ["sacct", "-j", job_id, "--noheader", "--format=State", "-X"], timeout=30
             )
             if sacct_output.strip():
@@ -454,12 +453,12 @@ class JobManager:
             else:
                 # If sacct returns empty, job might be very new, wait a bit and try once more
                 time.sleep(3)
-                sacct_output = check_output(
+                sacct_output = exec_cmd_with_output(
                     ["sacct", "-j", job_id, "--noheader", "--format=State", "-X"], timeout=30
                 )
                 return sacct_output.strip() if sacct_output.strip() else "UNKNOWN"
         except Exception as e:
-            print(f"Error checking job status with sacct: {e}")
+            logger.error(f"Error checking job status with sacct: {e}")
             return "ERROR"
 
     @staticmethod
@@ -486,16 +485,16 @@ class JobManager:
         last_failure_check = start_time
 
         # Wait for job to appear in system (initial delay)
-        print(f"   ⏳ Waiting for job {job_id} to appear in system...")
+        logger.info(f"Waiting for job {job_id} to appear in system...")
         time.sleep(60)  # Initial wait for job to be scheduled
 
         last_status = None  # Track status changes
         while time.time() - start_time < timeout:
             status = JobManager.check_job_status(job_id)
 
-            # Only print when status changes
+            # Only log when status changes
             if status != last_status:
-                print(f"   📊 Job {job_id} status changed: {status}")
+                logger.info(f"Job {job_id} status changed: {status}")
                 last_status = status
 
             # Check for terminal states - all mean the job is done
@@ -510,16 +509,16 @@ class JobManager:
                 "CANCELLED+",
             ] or ("error" in status.lower() and status != "ERROR"):
                 if status == "COMPLETED":
-                    print(f"   ✅ Job {job_id} completed successfully")
+                    logger.success(f"Job {job_id} completed successfully")
                     return True, None
                 else:
-                    print(f"   ❌ Job {job_id} finished with status: {status}")
+                    logger.error(f"Job {job_id} finished with status: {status}")
                     return True, None  # Job finished (let check_result determine success)
 
-            # For running states, don't print repeatedly - status change already printed above
+            # For running states, don't log repeatedly - status change already logged above
             # Only log unexpected/unknown statuses
             if status not in ["RUNNING", "PENDING", "CONFIGURING", "COMPLETING", "UNKNOWN"]:
-                print(f"   🔍 Job {job_id} has unexpected status: {status}")
+                logger.warning(f"Job {job_id} has unexpected status: {status}")
 
             # Check for early failures (only when job is running and test_config is provided)
             current_time = time.time()
@@ -531,25 +530,25 @@ class JobManager:
             ):
                 has_error, error_msg = JobManager.check_for_early_failure(job_id, test_config)
                 if has_error:
-                    print(f"   🚨 Early failure detected: {error_msg}")
-                    print(f"   🛑 Stopping wait for job {job_id}")
+                    logger.error(f"Early failure detected: {error_msg}")
+                    logger.warning(f"Stopping wait for job {job_id}")
                     return False, error_msg
                 last_failure_check = current_time
 
             time.sleep(check_interval)
 
-        print(f"   ⏰ Job {job_id} timeout after {timeout} seconds")
+        logger.warning(f"Job {job_id} timeout after {timeout} seconds")
         return False, "timeout"
 
     @staticmethod
     def cancel_job(job_id: str) -> bool:
         """Cancel job."""
         try:
-            call(["scancel", job_id], timeout=30)
-            print(f"   🛑 Job cancelled: {job_id}")
+            exec_cmd(["scancel", job_id], timeout=30)
+            logger.warning(f"Job cancelled: {job_id}")
             return True
         except Exception as e:
-            print(f"   ❌ Job cancellation failed: {e}")
+            logger.error(f"Job cancellation failed: {e}")
             return False
 
     @staticmethod
@@ -581,7 +580,7 @@ class JobManager:
             if os.path.exists(os.path.join(result_dir, file)):
                 log_writer.print_to_console(file)
             else:
-                print(f"   ⚠️  {file} not found: {file}")
+                logger.warning(f"{file} not found: {file}")
 
     @staticmethod
     def _check_accuracy_result(
@@ -620,40 +619,40 @@ class JobManager:
             result["error"] = validation_result.get("error", "Accuracy validation failed")
             return result
 
-        # Print validation results
-        print("   📊 Accuracy Validation Results:")
+        # Log validation results
+        logger.info("Accuracy Validation Results:")
         all_passed = validation_result["all_passed"]
 
-        # Print results for each run (using dataclass attributes for type safety)
+        # Log results for each run (using dataclass attributes for type safety)
         for run_validation in validation_result.get("runs", []):
             run_name = run_validation.run_name
             run_passed = run_validation.all_passed
-            run_icon = "✅" if run_passed else "❌"
+            status = "PASSED" if run_passed else "FAILED"
 
-            print(f"   {run_icon} {run_name}:")
+            logger.info(f"[{status}] {run_name}:")
 
             for ds_result in run_validation.results:
-                status_icon = "✅" if ds_result.passed else "❌"
+                status = "PASSED" if ds_result.passed else "FAILED"
                 dataset_name = ds_result.dataset
                 filter_type = ds_result.filter
                 threshold_type = ds_result.threshold_type
 
-                print(f"      {status_icon} {dataset_name} ({filter_type}) - {threshold_type}:")
+                logger.info(f"   [{status}] {dataset_name} ({filter_type}) - {threshold_type}:")
                 if ds_result.error:
-                    print(f"         ⚠️  Error: {ds_result.error}")
+                    logger.error(f"      Error: {ds_result.error}")
                 else:
-                    print(f"         Expected: {ds_result.expected:.4f}")
-                    print(f"         Actual:   {ds_result.actual:.4f}")
-                    print(f"         Threshold type:  {ds_result.threshold_type}")
-                    print(f"         {ds_result.message}")
+                    logger.info(f"      Expected: {ds_result.expected:.4f}")
+                    logger.info(f"      Actual:   {ds_result.actual:.4f}")
+                    logger.info(f"      Threshold type:  {ds_result.threshold_type}")
+                    logger.info(f"      {ds_result.message}")
 
         # Set result status
         if all_passed:
-            print("   ✅ All accuracy tests PASSED (all runs)")
+            logger.success("All accuracy tests PASSED (all runs)")
             result["success"] = True
             result["status"] = "PASSED"
         else:
-            print("   ❌ Some accuracy tests FAILED")
+            logger.failure("Some accuracy tests FAILED")
             result["success"] = False
             result["status"] = "FAILED"
             result["error"] = "Some accuracy tests FAILED"
@@ -703,7 +702,7 @@ class JobManager:
         # Check if df is None
         result_df = parse_result.get("df")
         if result_df is None:
-            print("   ❌ Parse result contains None DataFrame")
+            logger.error("Parse result contains None DataFrame")
             return result
 
         # Save results to CSV
@@ -751,7 +750,7 @@ class JobManager:
         Returns:
             Dict with success status and details
         """
-        print(f"   📁 Checking result directory: {result_dir}")
+        logger.info(f"Checking result directory: {result_dir}")
 
         # Print logs and config files to console
         JobManager._print_logs_to_console(job_id, result_dir)

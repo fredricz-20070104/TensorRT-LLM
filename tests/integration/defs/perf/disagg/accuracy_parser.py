@@ -6,6 +6,7 @@ from typing import Dict, List
 
 from accuracy_types import AccuracyValidationResult, DatasetValidation, RunValidation
 from config_loader import AccuracyConfig, MetricsConfig
+from logger import logger
 
 
 class AccuracyParser:
@@ -70,7 +71,7 @@ class AccuracyParser:
                 "error": "No accuracy values found in log",
             }
 
-        print(f"   📊 Found {len(all_runs_results)} accuracy test run(s)")
+        logger.info(f"Found {len(all_runs_results)} accuracy test run(s)")
 
         # Validate each run
         runs_validation: List[RunValidation] = []
@@ -80,7 +81,7 @@ class AccuracyParser:
             run_id = f"run-{run_idx + 1}"
             run_name = f"Run {run_idx + 1}"
 
-            print(f"   📊 Validating {run_name}: {parsed_results}")
+            logger.info(f"Validating {run_name}: {parsed_results}")
 
             # Validate all datasets for this run
             validation_results: List[DatasetValidation] = []

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import yaml
 from accuracy_validator import DatasetThreshold
 from common import EnvManager, extract_config_fields
+from logger import logger
 
 
 @dataclass
@@ -196,7 +197,7 @@ class ConfigLoader:
         configs = []
 
         if not self.base_dir.exists():
-            print(f"Warning: Config directory not found: {self.base_dir}")
+            logger.warning(f"Config directory not found: {self.base_dir}")
             return configs
 
         # Traverse: test_type/category/config.yaml
@@ -234,15 +235,15 @@ class ConfigLoader:
 
                         # Filter by GPU support
                         if gpu_type and gpu_type not in config.supported_gpus:
-                            print(
-                                f"   ⏭️  Skipping {yaml_file.name}: not supported on {gpu_type} "
+                            logger.info(
+                                f"Skipping {yaml_file.name}: not supported on {gpu_type} "
                                 f"(supported: {config.supported_gpus})"
                             )
                             continue
 
                         configs.append(config)
                     except Exception as e:
-                        print(f"Warning: Failed to load {yaml_file}: {e}")
+                        logger.warning(f"Failed to load {yaml_file}: {e}")
 
         # Check if any configuration files are found
         if len(configs) == 0:
@@ -260,7 +261,7 @@ class ConfigLoader:
             filters = ", ".join(filter_info) if filter_info else "no filters"
 
             raise RuntimeError(
-                f"❌ No configuration files found in '{self.base_dir}' with {filters}. "
+                f"No configuration files found in '{self.base_dir}' with {filters}. "
                 f"Please check:\n"
                 f"  1. Configuration files exist in the correct directory structure\n"
                 f"  2. YAML files contain valid 'metadata' section with required fields\n"
@@ -268,7 +269,7 @@ class ConfigLoader:
                 f"  4. Filter parameters match existing configurations"
             )
 
-        print(f"\n✅ Loaded {len(configs)} configurations for GPU type: {gpu_type}")
+        logger.success(f"Loaded {len(configs)} configurations for GPU type: {gpu_type}")
         return configs
 
     def _make_test_id(
@@ -375,7 +376,7 @@ class ConfigLoader:
                         )
                     )
                 accuracy_config = AccuracyConfig(datasets=datasets)
-                print(f"   📊 Loaded accuracy config with {len(datasets)} dataset(s)")
+                logger.info(f"Loaded accuracy config with {len(datasets)} dataset(s)")
 
         return TestConfig(
             config_path=str(yaml_path),
@@ -431,7 +432,7 @@ class ConfigLoader:
         default_config = DEFAULT_METRICS_CONFIG.get(config_key)
         if not default_config:
             # If no default configuration, trigger exception
-            print(f"   ⚠️  No default metrics config for config_key: {config_key}")
+            logger.warning(f"No default metrics config for config_key: {config_key}")
             raise ValueError(f"No default metrics config for config_key: {config_key}")
 
         # Check if there are metrics overrides in YAML
@@ -441,11 +442,11 @@ class ConfigLoader:
 
         if metrics_override:
             # There are metrics overrides, merge them
-            print("   ⚙️  Using custom metrics config (overriding defaults)")
+            logger.info("Using custom metrics config (overriding defaults)")
             return default_config.merge(metrics_override)
         else:
             # No metrics overrides, use default
-            print(f"   ⚙️  Using default metrics config for {test_category}")
+            logger.info(f"Using default metrics config for {test_category}")
             return default_config
 
     def _apply_env_overrides(self, config_data: dict) -> dict:
@@ -540,9 +541,9 @@ class ConfigLoader:
                     allow_unicode=True,
                     width=1000,  # Prevent line wrapping
                 )
-            print(f"   ✅ Updated config written to: {yaml_path.name}")
+            logger.success(f"Updated config written to: {yaml_path.name}")
         except Exception as e:
-            print(f"   ⚠️  Warning: Failed to write config file {yaml_path}: {e}")
+            logger.warning(f"Failed to write config file {yaml_path}: {e}")
             # Don't fail the test if write fails, just log warning
 
     def get_all_models(self) -> List[str]:

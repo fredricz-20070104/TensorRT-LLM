@@ -6,6 +6,7 @@ import pytest
 from common import CONFIG_BASE_DIR, EnvManager
 from config_loader import ConfigLoader, TestConfig
 from executor import JobManager
+from logger import logger
 from trackers import TestCaseTracker, session_tracker
 
 # Load all test configurations
@@ -29,7 +30,7 @@ def _ensure_session_end():
     global _session_ended
     if not _session_ended:
         _session_ended = True
-        print("\n⚠️  Ensuring session cleanup...")
+        logger.warning("Ensuring session cleanup...")
         session_tracker.end_and_collect()
 
 
@@ -37,7 +38,7 @@ def _ensure_session_end():
 if not EnvManager.get_debug_mode():
     atexit.register(_ensure_session_end)
 else:
-    print(f"🐛 Debug mode: Skipping atexit handler: {EnvManager.get_debug_job_id()}")
+    logger.debug(f"Debug mode: Skipping atexit handler: {EnvManager.get_debug_job_id()}")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -50,7 +51,7 @@ def session_lifecycle():
         if not EnvManager.get_debug_mode():
             _ensure_session_end()
         else:
-            print(f"🐛 Debug mode: Skipping session cleanup: {EnvManager.get_debug_job_id()}")
+            logger.debug(f"Debug mode: Skipping session cleanup: {EnvManager.get_debug_job_id()}")
 
 
 class TestDisaggBenchmark:
@@ -70,19 +71,19 @@ class TestDisaggBenchmark:
         test_tracker.start_test_case(test_case_name)
 
         try:
-            print(f"\n{'=' * 60}")
-            print(f"Performance Test: {test_config.display_name}")
-            print(f"Test ID: {test_config.test_id}")
-            print(f"Config file: {test_config.config_path}")
-            print(f"Test type: {test_config.test_type}")
-            print(f"Category: {test_config.test_category}")
-            print(f"Model: {test_config.model_name}")
-            print(f"Benchmark: {test_config.benchmark_type}")
-            print(f"Metrics log: {test_config.metrics_config.log_file}")
-            print(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
-            print(f"{'=' * 60}")
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Performance Test: {test_config.display_name}")
+            logger.info(f"Test ID: {test_config.test_id}")
+            logger.info(f"Config file: {test_config.config_path}")
+            logger.info(f"Test type: {test_config.test_type}")
+            logger.info(f"Category: {test_config.test_category}")
+            logger.info(f"Model: {test_config.model_name}")
+            logger.info(f"Benchmark: {test_config.benchmark_type}")
+            logger.info(f"Metrics log: {test_config.metrics_config.log_file}")
+            logger.info(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
+            logger.info(f"{'=' * 60}")
             if EnvManager.get_debug_mode():
-                print(f"🐛 Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                logger.debug(f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
                 job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager
@@ -135,24 +136,24 @@ class TestDisaggBenchmark:
         test_tracker.start_test_case(test_case_name)
 
         try:
-            print(f"\n{'=' * 60}")
-            print(f"Accuracy Test: {test_config.display_name}")
-            print(f"Test ID: {test_config.test_id}")
-            print(f"Config file: {test_config.config_path}")
-            print(f"Test type: {test_config.test_type}")
-            print(f"Model: {test_config.model_name}")
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Accuracy Test: {test_config.display_name}")
+            logger.info(f"Test ID: {test_config.test_id}")
+            logger.info(f"Config file: {test_config.config_path}")
+            logger.info(f"Test type: {test_config.test_type}")
+            logger.info(f"Model: {test_config.model_name}")
 
-            # Print configured datasets
+            # Log configured datasets
             if test_config.accuracy_config:
                 dataset_names = test_config.accuracy_config.get_all_dataset_names()
-                print(f"Datasets: {', '.join(dataset_names)}")
+                logger.info(f"Datasets: {', '.join(dataset_names)}")
 
-            print(f"Metrics log: {test_config.metrics_config.log_file}")
-            print(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
-            print(f"{'=' * 60}")
+            logger.info(f"Metrics log: {test_config.metrics_config.log_file}")
+            logger.info(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
+            logger.info(f"{'=' * 60}")
 
             if EnvManager.get_debug_mode():
-                print(f"🐛 Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                logger.debug(f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
                 job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager

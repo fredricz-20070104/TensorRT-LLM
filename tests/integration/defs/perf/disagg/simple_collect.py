@@ -186,7 +186,7 @@ class SessionPropertiesWriter:
             writer.writeheader()
             writer.writerow(data)
 
-        print(f"✅ CSV file generated: {self.csv_file}")
+        print(f"CSV file generated: {self.csv_file}")
 
 
 class TextWriter:
@@ -277,7 +277,7 @@ class TextWriter:
 
                 if result.returncode == 0 and result.stdout.strip():
                     version_info = result.stdout.strip()
-                    print("✅ TensorRT-LLM version retrieved on second attempt")
+                    print("TensorRT-LLM version retrieved on second attempt")
                 else:
                     print(f"TensorRT-LLM import failed again (returncode={result.returncode}):")
                     if result.stderr:
@@ -357,7 +357,7 @@ def main():
     for file_type, content in txt_contents.items():
         print(f"{file_type}: {content}")
 
-    print(f"\n✅ All files written to: {os.path.abspath(output_dir)}")
+    print(f"\nAll files written to: {os.path.abspath(output_dir)}")
 
 
 if __name__ == "__main__":

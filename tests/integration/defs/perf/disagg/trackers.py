@@ -5,6 +5,7 @@ from typing import Dict
 import pandas as pd
 from common import SESSION_COLLECT_CMD_TYPE, EnvManager
 from executor import run_job
+from logger import logger
 
 
 class TestCaseTracker:
@@ -19,19 +20,19 @@ class TestCaseTracker:
         """Record test case start time."""
         self.test_name = test_name
         self.start_time = datetime.now()
-        print(
-            f"🚀 Test case started: {test_name} at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        logger.info(
+            f"Test case started: {test_name} at {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     def end_test_case(self):
         """Record test case end time."""
         self.end_time = datetime.now()
         if self.test_name:
-            print(
-                f"✅ Test case ended: {self.test_name} at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}"
+            logger.success(
+                f"Test case ended: {self.test_name} at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}"
             )
             duration = (self.end_time - self.start_time).total_seconds()
-            print(f"⏱️  Test case duration: {duration:.2f} seconds")
+            logger.info(f"Test case duration: {duration:.2f} seconds")
 
     def get_timestamps(self) -> Dict[str, str]:
         """Get formatted timestamps for CSV."""
@@ -67,12 +68,12 @@ class SessionTracker:
     def start(self):
         """Record start time."""
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"📅 Session started: {self.start_time}")
+        logger.info(f"Session started: {self.start_time}")
 
     def end_and_collect(self):
         """Record end time and trigger information collection."""
         self.end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"📅 Session ended: {self.end_time}")
+        logger.info(f"Session ended: {self.end_time}")
 
         # Prepare log file path
         output_path = EnvManager.get_output_path()
@@ -84,9 +85,9 @@ class SessionTracker:
         if run_result["status"]:
             # update timestamps in CSV
             self._update_csv_timestamps()
-            print("📊 Session properties collected successfully")
+            logger.success("Session properties collected successfully")
         else:
-            print(f"❌ Failed to collect session properties: {run_result['msg']}")
+            logger.error(f"Failed to collect session properties: {run_result['msg']}")
 
         return run_result["status"]
 
@@ -96,7 +97,7 @@ class SessionTracker:
         csv_file = f"{output_path}/session_properties.csv"
 
         if not os.path.exists(csv_file):
-            print(f"   ⚠️  CSV file not found: {csv_file}")
+            logger.warning(f"CSV file not found: {csv_file}")
             return
 
         try:
@@ -109,10 +110,10 @@ class SessionTracker:
 
             # Save back
             df.to_csv(csv_file, index=False)
-            print(f"   ✅ Timestamps updated: {self.start_time} - {self.end_time}")
+            logger.success(f"Timestamps updated: {self.start_time} - {self.end_time}")
 
         except Exception as e:
-            print(f"   ❌ Failed to update timestamps: {e}")
+            logger.error(f"Failed to update timestamps: {e}")
 
 
 # Global instance

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from common import GPU_RESOURCE_CONFIG, EnvManager
+from logger import logger
 
 
 class LogWriter(object):
@@ -14,17 +15,17 @@ class LogWriter(object):
 
     def print_to_console(self, file_name):
         log_file_name = os.path.join(self.log_path, file_name)
-        print(f"Log file: {log_file_name}")
+        logger.info(f"Log file: {log_file_name}")
         try:
             with open(log_file_name, "r", encoding="utf-8", errors="replace") as log_file:
                 for line in log_file:
-                    print(line, end="")
+                    print(line, end="")  # Keep print for actual log content display
         except FileNotFoundError:
-            print(f"❌ File not found: {log_file_name}")
+            logger.error(f"File not found: {log_file_name}")
         except PermissionError:
-            print(f"❌ Permission denied: {log_file_name}")
+            logger.error(f"Permission denied: {log_file_name}")
         except Exception as e:
-            print(f"❌ Error reading file: {e}")
+            logger.error(f"Error reading file: {e}")
 
 
 class LogParser(object):
@@ -47,12 +48,12 @@ class LogParser(object):
         compiled = re.compile(pattern, re.MULTILINE | re.VERBOSE)
         results = []
         for match in compiled.finditer(log_content):
-            print(f"Found match: {match.group(0)[:100]}...")
-            print(f"All groups: {match.groups()}")
-            print(f"Number of groups: {len(match.groups())}")
+            logger.debug(f"Found match: {match.group(0)[:100]}...")
+            logger.debug(f"All groups: {match.groups()}")
+            logger.debug(f"Number of groups: {len(match.groups())}")
 
             if len(match.groups()) < 3:
-                print(f"Warning: Expected 3 groups but got {len(match.groups())}")
+                logger.warning(f"Expected 3 groups but got {len(match.groups())}")
                 continue
 
             try:
@@ -61,11 +62,11 @@ class LogParser(object):
                 item = dict(zip(metric_names, values))
                 item["concurrency"] = concurrency  # Concurrency used to make test names
                 results.append(item)
-                print(
+                logger.debug(
                     f"Successfully extracted: E2EL={values[0]}, TTFT={values[1]}, concurrency={concurrency}"
                 )
             except (ValueError, IndexError) as e:
-                print(f"Error processing match: {e}")
+                logger.warning(f"Error processing match: {e}")
                 continue
         return results
 
@@ -80,7 +81,7 @@ class LogParser(object):
         log_file_name = os.path.join(self.result_dir, self.metrics_config.log_file)
 
         if not os.path.exists(log_file_name):
-            print(f"   ❌ Log file not found: {log_file_name}")
+            logger.error(f"Log file not found: {log_file_name}")
             return {"status": False, "df": None}
 
         with open(log_file_name, "r", encoding="utf-8", errors="replace") as log_file:
@@ -91,7 +92,7 @@ class LogParser(object):
             self.metrics_config.extractor_pattern, self.metrics_config.metric_names, log_content
         )
         if len(raw_results) == 0:
-            print("   ⚠️  No metrics extracted from log file")
+            logger.warning("No metrics extracted from log file")
             return {"status": False, "df": None}
 
         # Convert to perf result format
@@ -257,11 +258,11 @@ class ResultSaver(object):
         if file_exists:
             # File exists, append data only (no header)
             df.to_csv(self.output_path, mode="a", index=False, header=False)
-            print(f"✅ Seamlessly appended {len(df)} rows to {self.output_path}")
+            logger.success(f"Seamlessly appended {len(df)} rows to {self.output_path}")
         else:
             # First write, include header
             df.to_csv(self.output_path, mode="w", index=False, header=True)
-            print(f"✅ Created new file with {len(df)} rows: {self.output_path}")
+            logger.success(f"Created new file with {len(df)} rows: {self.output_path}")
 
     def save_all(self, results: List[Tuple[pd.DataFrame, str]]):
         """Save in batch manner: Append each dataframe with header.
@@ -270,5 +271,5 @@ class ResultSaver(object):
         ex: [(df1, '1k1k'), (df2, '8k1k')]
         """
         for df, btype in results:
-            print(f"📝 Writing benchmark type: {btype}")
+            logger.info(f"Writing benchmark type: {btype}")
             self.append_a_df(df)

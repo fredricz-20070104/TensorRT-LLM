@@ -6,6 +6,8 @@ Can share options like --disagg-test-list defined in this conftest.py.
 
 import pytest
 
+from logger import logger
+
 
 def pytest_addoption(parser):
     """Add disagg-specific command line options."""
@@ -69,15 +71,15 @@ def pytest_collection_modifyitems(config, items):
                 line.strip() for line in f if line.strip() and not line.strip().startswith("#")
             )
     except FileNotFoundError:
-        pytest.exit(f"❌ Error: Test list file not found: {test_list_file}")
+        pytest.exit(f"Error: Test list file not found: {test_list_file}")
         return
     except Exception as e:
-        pytest.exit(f"❌ Error reading test list file {test_list_file}: {e}")
+        pytest.exit(f"Error reading test list file {test_list_file}: {e}")
         return
 
     if not wanted_tests:
         pytest.exit(
-            f"❌ Error: Test list file {test_list_file} is empty or contains no valid test IDs"
+            f"Error: Test list file {test_list_file} is empty or contains no valid test IDs"
         )
         return
 
@@ -98,16 +100,16 @@ def pytest_collection_modifyitems(config, items):
         config.hook.pytest_deselected(items=deselected)
         items[:] = selected
 
-    # Print summary
-    print(f"\n{'=' * 70}")
-    print("✅ Test List Filter Active")
-    print(f"   File: {test_list_file}")
-    print(f"   Requested: {len(wanted_tests)} test(s)")
-    print(f"   Selected:  {len(selected)} test(s)")
-    print(f"   Deselected: {len(deselected)} test(s)")
+    # Log summary
+    logger.info(f"\n{'=' * 70}")
+    logger.success("Test List Filter Active")
+    logger.info(f"File: {test_list_file}")
+    logger.info(f"Requested: {len(wanted_tests)} test(s)")
+    logger.info(f"Selected:  {len(selected)} test(s)")
+    logger.info(f"Deselected: {len(deselected)} test(s)")
 
     if len(selected) == 0:
-        print("\n⚠️  Warning: No tests matched the test list!")
-        print(f"   Please check that the test IDs in {test_list_file} are correct.")
+        logger.warning("No tests matched the test list!")
+        logger.warning(f"Please check that the test IDs in {test_list_file} are correct.")
 
-    print(f"{'=' * 70}\n")
+    logger.info(f"{'=' * 70}\n")
