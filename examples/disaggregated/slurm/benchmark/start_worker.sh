@@ -20,6 +20,7 @@ echo "enable_pdl: ${enable_pdl}, log_dir: ${log_dir}"
 echo "SLURM_PROCID: ${SLURM_PROCID}, hostname: $(hostname), instance_id: ${instance_id}"
 
 export TLLM_LOG_LEVEL=INFO
+export TLLM_NUMA_AWARE_WORKER_AFFINITY=1
 export TRTLLM_SERVER_DISABLE_GC=1
 export TRTLLM_WORKER_DISABLE_GC=1
 
