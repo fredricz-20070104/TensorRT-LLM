@@ -374,9 +374,6 @@ class JobManager:
         context_dir = fields["context_dir"]
         log_dir_name = log_base
 
-        logger.info(f"Log directory: {log_dir_name}")
-        logger.info(f"Context directory: {context_dir}")
-
         result_dir = os.path.join(EnvManager.get_script_dir(), log_dir_name, context_dir)
         return result_dir
 
@@ -404,6 +401,7 @@ class JobManager:
         config_data = test_config.config_data
         # Get result directory
         result_dir = JobManager.get_result_dir(test_config)
+        logger.info(f"Result directory: {result_dir}")
 
         # Call the internal implementation method
         check_result = JobManager._check_job_result(

@@ -433,11 +433,11 @@ class ConfigLoader:
 
         if metrics_override:
             # There are metrics overrides, merge them
-            logger.info("Using custom metrics config (overriding defaults)")
+            logger.debug("Using custom metrics config (overriding defaults)")
             return default_config.merge(metrics_override)
         else:
             # No metrics overrides, use default
-            logger.info(f"Using default metrics config for {test_category}")
+            logger.debug(f"Using default metrics config for {test_category}")
             return default_config
 
     def _apply_env_overrides(self, config_data: dict) -> dict:
