@@ -181,13 +181,13 @@ sequence:
 
 # Environment Configuration
 environment:
-  container_mount: "/lustre:/lustre"
-  container_image: "/lustre/fsw/portfolios/coreai/users/deemon/trtllm.sqsh"
-  model_path: "/lustre/fsw/portfolios/coreai/users/xqiao/DeepSeek-R1-0528-FP4-V2"
-  trtllm_repo: "/lustre/fs1/portfolios/coreai/projects/trtllm"
+  container_mount: <container_mount>
+  container_image: <container_image>
+  model_path: <model_path>
+  trtllm_repo: <trtllm_repo>
   build_wheel: false
-  dataset_file: "/lustre/fs1/portfolios/coreai/datasets/prompts.json"
-  work_dir: "/lustre/fs1/portfolios/coreai/perf_test"
+  dataset_file: <dataset_file>
+  work_dir: <work_dir>
 
 # Profiling Configuration
 profiling:
