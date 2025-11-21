@@ -5,6 +5,7 @@ import atexit
 import pytest
 from utils.common import CONFIG_BASE_DIR, EnvManager
 from utils.config_loader import ConfigLoader, TestConfig
+from utils.config_validator import ConfigValidator
 from utils.logger import logger
 from utils.trackers import TestCaseTracker, session_tracker
 from execution.executor import JobManager
@@ -62,6 +63,12 @@ class TestDisaggBenchmark:
     def test_benchmark(self, request, test_config: TestConfig):
         """Performance benchmark test for YAML configurations."""
         full_test_name = request.node.name
+
+        # Validate configuration first (before any other operations)
+        try:
+            ConfigValidator.validate_test_config(test_config)
+        except Exception as e:
+            pytest.fail(f"Configuration validation failed: {e}")
 
         # Create test case tracker
         test_tracker = TestCaseTracker()
@@ -127,6 +134,12 @@ class TestDisaggBenchmark:
     def test_accuracy(self, request, test_config: TestConfig):
         """Accuracy test for YAML configurations."""
         full_test_name = request.node.name
+
+        # Validate configuration first (before any other operations)
+        try:
+            ConfigValidator.validate_test_config(test_config)
+        except Exception as e:
+            pytest.fail(f"Configuration validation failed: {e}")
 
         # Create test case tracker
         test_tracker = TestCaseTracker()
