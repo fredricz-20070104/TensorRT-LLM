@@ -1,6 +1,4 @@
 """Disaggregated Benchmark Executor.
-
-Simplified version.
 """
 
 import os
@@ -98,11 +96,11 @@ class SlurmRunCommandBuilder:
                 # Note: Use --no-deps to avoid overwriting container's pre-installed packages (like torch)
                 install_cmd = f"""
                     cd {repo_dir}
-                    echo '📦 Step 1: Installing TensorRT-LLM wheel...'
-                    pip3 install {trtllm_wheel_path} || echo '⚠️  Wheel install failed, continuing...'
-                    echo '✅ Wheel installation completed'
+                    echo 'Step 1: Installing TensorRT-LLM wheel...'
+                    pip3 install {trtllm_wheel_path} || echo 'Wheel install failed, continuing...'
+                    echo 'Wheel installation completed'
 
-                    echo '🚀 Step 2: Running simple_collect.py...'
+                    echo 'Step 2: Running simple_collect.py...'
                     cd {work_dir}
                     python3 {work_dir}/simple_collect.py {output_path}
                 """
@@ -110,11 +108,11 @@ class SlurmRunCommandBuilder:
             elif install_mode == "source":
                 install_cmd = f"""
                 cd {repo_dir}
-                pip3 install -e . || echo '⚠️  Source install failed, continuing...'
+                pip3 install -e . || echo 'Source install failed, continuing...'
 
-                echo '✅ Source installation completed'
+                echo 'Source installation completed'
 
-                echo '🚀 Step 3: Running simple_collect.py...'
+                echo 'Step 3: Running simple_collect.py...'
                 cd {work_dir}
                 python3 {work_dir}/simple_collect.py {output_path}
                 """
