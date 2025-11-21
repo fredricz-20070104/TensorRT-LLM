@@ -137,12 +137,19 @@ def extract_config_fields(config_data: dict) -> dict:
     osl = config_data["benchmark"]["output_length"]
     ctx_num = config_data["hardware"]["num_ctx_servers"]
     gen_num = config_data["hardware"]["num_gen_servers"]
+
+    ctx_max_seq_len = config_data["worker_config"]["ctx"]["max_seq_len"]
+    gen_max_seq_len = config_data["worker_config"]["gen"]["max_seq_len"]
     gen_tp_size = config_data["worker_config"]["gen"]["tensor_parallel_size"]
     gen_batch_size = config_data["worker_config"]["gen"]["max_batch_size"]
     gen_enable_dp = config_data["worker_config"]["gen"]["enable_attention_dp"]
+    streaming = config_data["benchmark"]["streaming"]
     cache_transceiver_backend = config_data["worker_config"]["gen"]["cache_transceiver_config"][
         "backend"
     ]
+
+    gen_max_tokens = config_data["worker_config"]["gen"]["max_num_tokens"]
+    gen_max_batch_size = config_data["worker_config"]["gen"]["max_batch_size"]
 
     eplb_slots = (
         config_data["worker_config"]["gen"]
@@ -179,4 +186,9 @@ def extract_config_fields(config_data: dict) -> dict:
         "cache_transceiver_backend": cache_transceiver_backend,
         "log_base": log_base,
         "context_dir": context_dir,
+        "gen_max_tokens": gen_max_tokens,
+        "gen_max_batch_size": gen_max_batch_size,
+        "streaming": streaming,
+        "ctx_max_seq_len": ctx_max_seq_len,
+        "gen_max_seq_len": gen_max_seq_len,
     }

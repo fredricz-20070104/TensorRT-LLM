@@ -86,7 +86,7 @@ worker_config:
   ctx:
     max_batch_size: 4
     max_num_tokens: 4608
-    max_seq_len: 1227
+    max_seq_len: 2251
     tensor_parallel_size: 4
     moe_expert_parallel_size: 4
     enable_attention_dp: true
