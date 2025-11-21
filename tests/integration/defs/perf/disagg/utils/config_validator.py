@@ -35,11 +35,11 @@ class ConfigValidator:
         extracted_config = extract_config_fields(test_config.config_data)
 
         ConfigValidator._validate_gen_max_tokens(extracted_config)
-        logger.info("Validate generation maximum tokens passed!")
+        logger.info("Validate generation maximum tokens succeeded!")
         ConfigValidator._validate_streaming_true(extracted_config)
-        logger.info("Validate streaming is true passed!")
+        logger.info("Validate streaming is true succeeded!")
         ConfigValidator._validate_ctx_and_gen_max_seq_length(extracted_config)
-        logger.info("Validate context and generation maximum sequence length passed!")
+        logger.info("Validate context and generation maximum sequence length succeeded!")
         
 
     @staticmethod
