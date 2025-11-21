@@ -19,7 +19,7 @@ class LogWriter(object):
         try:
             with open(log_file_name, "r", encoding="utf-8", errors="replace") as log_file:
                 for line in log_file:
-                    print(line, end="")  # Keep print for actual log content display
+                    logger.debug(line.rstrip('\n'))
         except FileNotFoundError:
             logger.error(f"File not found: {log_file_name}")
         except PermissionError:

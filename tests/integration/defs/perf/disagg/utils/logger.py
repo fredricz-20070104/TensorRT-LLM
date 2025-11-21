@@ -30,7 +30,7 @@ class DisaggLogger:
         Multiple calls are safe due to handler clearing.
         """
         self.logger = logging.getLogger('disagg_benchmark')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         self.logger.handlers.clear()  # Clear any existing handlers to avoid duplicates
         
         # Console handler - outputs to stdout
@@ -64,7 +64,7 @@ class DisaggLogger:
             log_file = os.path.join(output_path, f'disagg_benchmark_{timestamp}.log')
             
             self.file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-            self.file_handler.setLevel(logging.DEBUG)
+            self.file_handler.setLevel(logging.INFO)
             file_formatter = logging.Formatter(
                 '%(asctime)s [%(levelname)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
