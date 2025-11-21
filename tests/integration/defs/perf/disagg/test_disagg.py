@@ -72,7 +72,7 @@ class TestDisaggBenchmark:
 
         # Create test case tracker
         test_tracker = TestCaseTracker()
-        test_case_name = f"{test_config.model_name}-{test_config.benchmark_type}"
+        test_case_name = test_config.test_id
 
         # Start tracking test case
         test_tracker.start_test_case(test_case_name)
@@ -143,7 +143,7 @@ class TestDisaggBenchmark:
 
         # Create test case tracker
         test_tracker = TestCaseTracker()
-        test_case_name = f"{test_config.model_name}-accuracy"
+        test_case_name = f"{test_config.test_id}-accuracy"
 
         # Start tracking test case
         test_tracker.start_test_case(test_case_name)

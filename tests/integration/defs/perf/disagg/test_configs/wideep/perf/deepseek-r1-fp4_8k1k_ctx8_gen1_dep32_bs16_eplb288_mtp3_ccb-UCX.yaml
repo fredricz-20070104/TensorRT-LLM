@@ -23,20 +23,19 @@ benchmark:
   benchmark_ratio: 0.8
   streaming: true
   concurrency_list: '538'
+  input_length: 8192
+  output_length: 1024
+  dataset_file: <dataset_file>
 hardware:
   gpus_per_node: 4
   num_ctx_servers: 8
   num_gen_servers: 1
-sequence:
-  input_length: 8192
-  output_length: 1024
 environment:
   container_mount: <container_mount>
   container_image: <container_image>
   model_path: <model_path>
   trtllm_repo: ''
   build_wheel: false
-  dataset_file: <dataset_file>
   work_dir: <full_path_to_work_dir>
 profiling:
   nsys_on: false
