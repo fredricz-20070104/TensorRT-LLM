@@ -121,9 +121,16 @@ def setup_logging(output_path: str) -> None:
 # Automatically setup file logging when module is imported
 try:
     from common import EnvManager
-    setup_logging(EnvManager.get_output_path())
-except Exception:
+    output_path = EnvManager.get_output_path()
+    
+    # Check if output_path is a valid path (not a placeholder)
+    if output_path and not output_path.startswith('<'):
+        setup_logging(output_path)
+    else:
+        logger.warning(f"OUTPUT_PATH not configured (current: '{output_path}'). Logging to console only.")
+        logger.info("Set OUTPUT_PATH environment variable to enable file logging.")
+except Exception as e:
     # If setup fails (e.g., EnvManager not available, path issues),
     # logger will still work with console output only
-    pass
+    logger.warning(f"Failed to setup file logging: {e}. Logging to console only.")
 

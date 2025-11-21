@@ -86,7 +86,9 @@ class EnvManager:
     @staticmethod
     def get_output_path() -> str:
         output_path = os.getenv("OUTPUT_PATH", "<The csv and disagg comparison HTML output directory>")
-        os.makedirs(output_path, exist_ok=True)
+        # Only create directory if it's a valid path (not a placeholder)
+        if output_path and not output_path.startswith('<'):
+            os.makedirs(output_path, exist_ok=True)
         return output_path
 
     @staticmethod
