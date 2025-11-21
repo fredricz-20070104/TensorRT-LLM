@@ -120,7 +120,7 @@ def setup_logging(output_path: str) -> None:
 
 # Automatically setup file logging when module is imported
 try:
-    from common import EnvManager
+    from .common import EnvManager
     output_path = EnvManager.get_output_path()
     
     # Check if output_path is a valid path (not a placeholder)
