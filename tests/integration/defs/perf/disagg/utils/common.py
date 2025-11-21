@@ -133,8 +133,8 @@ CONFIG_BASE_DIR = os.path.join(EnvManager.get_work_dir(), "test_configs")
 def extract_config_fields(config_data: dict) -> dict:
     """Extract critical fields from configuration data to generate test ID and log directory."""
     # Extract basic fields
-    isl = config_data["sequence"]["input_length"]
-    osl = config_data["sequence"]["output_length"]
+    isl = config_data["benchmark"]["input_length"]
+    osl = config_data["benchmark"]["output_length"]
     ctx_num = config_data["hardware"]["num_ctx_servers"]
     gen_num = config_data["hardware"]["num_gen_servers"]
     gen_tp_size = config_data["worker_config"]["gen"]["tensor_parallel_size"]

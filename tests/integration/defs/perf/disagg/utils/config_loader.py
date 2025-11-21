@@ -465,7 +465,7 @@ class ConfigLoader:
             ("environment", "container_image"): lambda: EnvManager.get_container_image(),
             ("environment", "trtllm_repo"): lambda: EnvManager.get_repo_dir(),
             ("environment", "trtllm_wheel_path"): lambda: EnvManager.get_trtllm_wheel_path(),
-            ("environment", "dataset_file"): lambda: self._get_dataset_file(config),
+            ("benchmark", "dataset_file"): lambda: self._get_dataset_file(config),
             ("environment", "work_dir"): lambda: EnvManager.get_script_dir(),
             ("environment", "model_path"): lambda: self._get_full_model_path(config),
             ("slurm", "script_file"): lambda: self._get_script_file(config),
