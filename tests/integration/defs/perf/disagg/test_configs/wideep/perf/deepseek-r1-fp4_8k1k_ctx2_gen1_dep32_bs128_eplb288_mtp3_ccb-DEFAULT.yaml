@@ -34,7 +34,7 @@ environment:
   container_mount: <container_mount>
   container_image: <container_image>
   model_path: <model_path>
-  trtllm_repo: /lustre/fs1/portfolios/coreai/users/kevxie/workspace/TensorRT-LLM
+  trtllm_repo: ''
   build_wheel: false
   work_dir: <full_path_to_work_dir>
 profiling:
