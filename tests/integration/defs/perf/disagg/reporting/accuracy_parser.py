@@ -124,7 +124,10 @@ class AccuracyParser:
                             threshold=dataset_config.get_computed_threshold(),
                             threshold_type=dataset_config.threshold_type,
                             message="",
-                            error=f"Filter '{filter_type}' not found for dataset {dataset_config.dataset_name} in {run_name}",
+                            error=(
+                                f"Filter '{filter_type}' not found for dataset "
+                                f"{dataset_config.dataset_name} in {run_name}"
+                            ),
                         )
                     )
                     run_passed = False
