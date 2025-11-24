@@ -85,9 +85,11 @@ class EnvManager:
 
     @staticmethod
     def get_output_path() -> str:
-        output_path = os.getenv("OUTPUT_PATH", "<The csv and disagg comparison HTML output directory>")
+        output_path = os.getenv(
+            "OUTPUT_PATH", "<The csv and disagg comparison HTML output directory>"
+        )
         # Only create directory if it's a valid path (not a placeholder)
-        if output_path and not output_path.startswith('<'):
+        if output_path and not output_path.startswith("<"):
             os.makedirs(output_path, exist_ok=True)
         return output_path
 
@@ -126,6 +128,7 @@ class EnvManager:
     @staticmethod
     def get_debug_job_id() -> str:
         return os.getenv("DEBUG_JOB_ID", "908390")
+
 
 CONFIG_BASE_DIR = os.path.join(EnvManager.get_work_dir(), "test_configs")
 

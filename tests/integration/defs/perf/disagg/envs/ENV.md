@@ -127,4 +127,3 @@ Mock job ID to use when DEBUG_MODE is enabled. Only used for testing without SLU
 - XDG_CACHE_HOME should be on a filesystem with adequate quota
 - Keep your env file private if it contains sensitive information
 - Add your env file to `.gitignore` if needed
-

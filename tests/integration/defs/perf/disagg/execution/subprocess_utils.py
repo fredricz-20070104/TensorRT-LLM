@@ -52,7 +52,6 @@ def exec_cmd_with_output(*popenargs, timeout: Optional[float] = None, **kwargs) 
         stderr=subprocess.PIPE,
         timeout=timeout,
         check=True,
-        **kwargs
+        **kwargs,
     )
     return result.stdout.decode()
-

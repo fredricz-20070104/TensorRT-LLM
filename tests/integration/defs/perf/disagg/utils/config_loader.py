@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 import yaml
 from reporting.accuracy_validator import DatasetThreshold
+
 from utils.common import EnvManager
 from utils.logger import logger
 
@@ -273,8 +274,7 @@ class ConfigLoader:
         logger.success(f"Loaded {len(configs)} configurations for GPU type: {gpu_type}")
         return configs
 
-    def _make_test_id(
-        self, test_type: str, test_category: str, test_file_name: str) -> str:
+    def _make_test_id(self, test_type: str, test_category: str, test_file_name: str) -> str:
         """Generate test ID from test type, category, and filename.
 
         Since YAML filenames now contain all configuration info in a standardized format,

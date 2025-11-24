@@ -3,12 +3,12 @@
 import atexit
 
 import pytest
+from execution.executor import JobManager
 from utils.common import CONFIG_BASE_DIR, EnvManager
 from utils.config_loader import ConfigLoader, TestConfig
 from utils.config_validator import ConfigValidator
 from utils.logger import logger
 from utils.trackers import TestCaseTracker, session_tracker
-from execution.executor import JobManager
 
 # Load all test configurations
 config_loader = ConfigLoader(base_dir=CONFIG_BASE_DIR)
@@ -90,7 +90,9 @@ class TestDisaggBenchmark:
             logger.info(f"Supported GPUs: {', '.join(test_config.supported_gpus)}")
             logger.info(f"{'=' * 60}")
             if EnvManager.get_debug_mode():
-                logger.debug(f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                logger.debug(
+                    f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}"
+                )
                 job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager
@@ -166,7 +168,9 @@ class TestDisaggBenchmark:
             logger.info(f"{'=' * 60}")
 
             if EnvManager.get_debug_mode():
-                logger.debug(f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}")
+                logger.debug(
+                    f"Debug mode: Skipping job submission, using job_id: {EnvManager.get_debug_job_id()}"
+                )
                 job_id = EnvManager.get_debug_job_id()
             else:
                 # Submit job using JobManager

@@ -5,7 +5,6 @@ Can share options like --disagg-test-list defined in this conftest.py.
 """
 
 import pytest
-
 from utils.logger import logger
 
 

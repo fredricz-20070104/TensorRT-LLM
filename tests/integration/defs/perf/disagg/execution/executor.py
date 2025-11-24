@@ -1,5 +1,4 @@
-"""Disaggregated Benchmark Executor.
-"""
+"""Disaggregated Benchmark Executor."""
 
 import os
 import re
@@ -8,7 +7,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import yaml
-
+from reporting.report import LogParser, LogWriter, ResultSaver
 from utils.common import (
     GPU_RESOURCE_CONFIG,
     SESSION_COLLECT_CMD_TYPE,
@@ -16,7 +15,7 @@ from utils.common import (
     extract_config_fields,
 )
 from utils.logger import logger
-from reporting.report import LogParser, ResultSaver, LogWriter
+
 from execution.subprocess_utils import exec_cmd, exec_cmd_with_output
 
 # ============================================================================

@@ -1,6 +1,5 @@
 """Accuracy validation classes and dataset threshold configurations."""
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
@@ -77,7 +76,7 @@ class HypothesisTestingParams:
         # This matches the convention in accuracy_core.py where ref_accuracy is stored as percentage
         if self.ref_accuracy <= 1.0 and self.sigma > 1.0:
             self.ref_accuracy = self.ref_accuracy * 100
-        
+
         self.theta = compute_theta(
             self.num_samples, sigma=self.sigma, alpha=self.alpha, beta=self.beta
         )
@@ -211,7 +210,7 @@ class HypothesisTestValidator(object):
         # Normalize actual_value to same unit as ref_accuracy/threshold
         # If ref_accuracy is in percentage (>1.0) and actual_value is in decimal (<=1.0), convert actual_value
         compare_actual = actual_value * 100
-        
+
         # For display: always show as percentage
         display_actual = compare_actual
         display_expected = self.params.ref_accuracy
