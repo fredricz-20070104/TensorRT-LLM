@@ -1,0 +1,1 @@
+test_disagg.py::TestDisaggBenchmark::test_accuracy[wideep_accuracy_deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_ccb-NIXL]
