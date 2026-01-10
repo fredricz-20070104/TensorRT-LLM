@@ -50,7 +50,7 @@ worker_config:
     pipeline_parallel_size: 1
     max_batch_size: 4
     # mtp_size=3 ⇒ max_num_tokens = 4 * (3 + 1) = 16
-    max_num_tokens: 16
+    max_num_tokens: 128
     max_seq_len: 139296
     cuda_graph_config:
       enable_padding: true
