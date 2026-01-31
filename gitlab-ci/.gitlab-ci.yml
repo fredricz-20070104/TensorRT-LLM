@@ -1,0 +1,103 @@
+#
+# Main GitLab CI/CD Configuration
+# This file orchestrates different test workflows based on TEST_TYPE
+#
+# Supported TEST_TYPE values:
+#   - disagg: Disaggregated multi-node performance tests
+#   - perf: Single node performance benchmarks (pytest-based)
+#   - multinode: Multi-node integration tests (future)
+#   - unit: Unit tests (future)
+#
+
+# Include all test workflow modules
+# Each module is activated by TEST_TYPE variable via rules
+include:
+  - local: .gitlab-ci/disagg_test.yml
+  - local: .gitlab-ci/perf_test.yml
+  # Future modules (uncomment when ready):
+  # - local: .gitlab-ci/multinode_test.yml
+  # - local: .gitlab-ci/unit_test.yml
+
+# Global variables (can be overridden per TEST_TYPE in workflow rules)
+variables:
+  TEST_TYPE: "disagg"  # Default test type
+  
+  # GPU selection for disagg tests (set in GitLab UI or API trigger)
+  # Leave both false to run all GPUs
+  # RUN_GB200: "false"  # Set to "true" to run only GB200 tests
+  # RUN_GB300: "false"  # Set to "true" to run only GB300 tests
+  # 
+  # Examples:
+  #   - Run only GB200: RUN_GB200="true", RUN_GB300="false"
+  #   - Run only GB300: RUN_GB200="false", RUN_GB300="true"
+  #   - Run both: RUN_GB200="false", RUN_GB300="false" (or leave unset)
+  #   - Run both explicitly: RUN_GB200="true", RUN_GB300="true"
+
+# Define stages for all test types
+stages:
+  - init
+  - scm
+  - sync
+  - build
+  - setup
+  - test
+  - artifacts
+  - analyze
+  - report
+
+# Workflow rules - control when pipeline should run
+# Note: Variables are set at job level in each test type's yml file
+workflow:
+  rules:
+    # ============================================================
+    # Manual Trigger (Web UI)
+    # ============================================================
+    - if: $CI_PIPELINE_SOURCE == "web" && $TEST_TYPE == "disagg"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "web" && $TEST_TYPE == "perf"
+      when: always
+    
+    # Future: multinode tests
+    # - if: $CI_PIPELINE_SOURCE == "web" && $TEST_TYPE == "multinode"
+    #   when: always
+    
+    # Default for manual trigger (when TEST_TYPE not specified or unknown)
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: always
+    
+    # ============================================================
+    # Scheduled Trigger (Nightly/Weekly)
+    # ============================================================
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TEST_TYPE == "disagg"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TEST_TYPE == "perf"
+      when: always
+    
+    # Future: multinode tests
+    # - if: $CI_PIPELINE_SOURCE == "schedule" && $TEST_TYPE == "multinode"
+    #   when: always
+    
+    # Default for schedule (when TEST_TYPE not specified)
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: always
+    
+    # ============================================================
+    # API Trigger
+    # ============================================================
+    - if: $CI_PIPELINE_SOURCE == "api" && $TEST_TYPE == "disagg"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "api" && $TEST_TYPE == "perf"
+      when: always
+    
+    # Future: multinode tests
+    # - if: $CI_PIPELINE_SOURCE == "api" && $TEST_TYPE == "multinode"
+    #   when: always
+    
+    # Default for API (when TEST_TYPE not specified but trigger is valid)
+    - if: $CI_PIPELINE_SOURCE == "api" && $TEST_TYPE != null
+      when: always
+    
+    # ============================================================
+    # Block all other triggers (push, merge_request, etc.)
+    # ============================================================
+    - when: never

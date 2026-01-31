@@ -1,0 +1,412 @@
+#
+# GitLab CI/CD Pipeline for TensorRT-LLM Single Node Performance Testing
+# 
+# Runs pytest-based performance tests on single node GPU clusters
+# Supports GB200 and GB300 with independent execution chains
+#
+
+# ============================================================
+# Common Variables
+# ============================================================
+
+.perf_variables: &perf_variables
+  CLUSTER_USERNAME: "fredricz"
+  DOCKER_IMAGE: ""
+  WHEEL_URL: ""
+  INSTALL_MODE: "wheel"
+  LLM_VERSION: "1.2.0"
+  TRT_LLM_BRANCH: "main"
+  TRT_LLM_REPO: "NVIDIA/TensorRT-LLM"
+  TIMEOUT: "7200"
+  TEST_TIME: "4:00:00"
+  WRITE_PERF_DB: "true"
+  FORK_GITHUB: "true"
+  TENSORRT_VERSION: "10.8.0.32"
+  CUDA_VERSION: "12.8"
+  REPORT_DIR: "output"
+  RUN_GB200: "false"
+  RUN_GB300: "true"
+  # Perf test specific variables
+  TEST_LIST: "qa/llm_perf_core.yml"
+  TEST_SUITE: ""
+  SPLITS: "10"
+  GROUP: "1"  # Will be overridden by parallel matrix
+
+# ============================================================
+# Common Script Templates
+# Reuse disagg scripts for all stages except test (7_test.sh)
+# ============================================================
+
+.perf_validate_common_script: &perf_validate_common_script
+  - bash scripts/disagg/1_validate.sh "${GPU}"
+
+.perf_init_common_script: &perf_init_common_script
+  - bash scripts/perf/2_init.sh "${GPU}"
+
+.perf_scm_common_script: &perf_scm_common_script
+  - bash scripts/disagg/3_scm.sh "${GPU}"
+
+.perf_sync_common_script: &perf_sync_common_script
+  - bash scripts/disagg/4_sync.sh "${GPU}"
+
+.perf_build_common_script: &perf_build_common_script
+  - bash scripts/disagg/5_build.sh "${GPU}"
+
+.perf_setup_common_script: &perf_setup_common_script
+  - bash scripts/disagg/6_setup.sh "${GPU}"
+
+# Only 7_test.sh is different - uses single node perf test
+.perf_test_common_script: &perf_test_common_script
+  - bash scripts/perf/7_test.sh "${GPU}"
+
+.perf_artifacts_common_script: &perf_artifacts_common_script
+  - bash scripts/disagg/8_artifacts.sh "${GPU}"
+
+.perf_analyze_common_script: &perf_analyze_common_script
+  - bash scripts/disagg/9_analyze.sh "${GPU}"
+
+.perf_report_common_script: &perf_report_common_script
+  - bash scripts/disagg/10_report.sh "${GPU}"
+
+# ============================================================
+# GB200 Base Configuration Template
+# ============================================================
+
+.perf_gb200_base: &perf_gb200_base
+  variables:
+    <<: *perf_variables
+    GPU: "GB200"
+    RUNNER_TAG: "selene_login"
+  tags:
+    - selene_login
+  before_script:
+    - export GPU="GB200"
+    - export RUNNER_TAG="selene_login"
+    - export WORKDIR="$(basename "$CI_PROJECT_DIR")-pipeline-${CI_PIPELINE_ID}"
+    - export CONFIG_KEY="GB200"
+    - export CLUSTER_ACCOUNT="coreai_comparch_trtllm"
+    - export CLUSTER_PARTITION="batch"
+    - export CLUSTER_STORAGE="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common"
+    - export CLUSTER_LLM_DATA="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common/llm-models"
+    - export CCACHE_DIR="/lustre/fs1/portfolios/coreai/projects/coreai_comparch_trtllm/common/ccache_${GITLAB_USER_LOGIN}"
+    - export HOST="oci-hsg-cs-001-login-01"
+    - export EXTRA_SRUN_PARAMS="--gres=gpu:4"
+    - export CLUSTER_WORKDIR="${CLUSTER_STORAGE}/trtllm_ci/perf/${HOST}/${WORKDIR}"
+    - export MPI_TYPE="pmix"
+    - export BASE_SRUN="srun --mpi=${MPI_TYPE} -t ${TEST_TIME} -A ${CLUSTER_ACCOUNT} -N1 -p ${CLUSTER_PARTITION} -J ${CLUSTER_ACCOUNT}-trt:perf ${EXTRA_SRUN_PARAMS}"
+    - export CLUSTER_USERNAME="${CLUSTER_USERNAME}"
+    # SSH setup for GB200 (remote execution)
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+  rules:
+    - if: '$TEST_TYPE == "perf" && $RUN_GB200 == "true"'
+    - if: '$TEST_TYPE == "perf" && $RUN_GB200 != "true" && $RUN_GB300 != "true"'
+
+# ============================================================
+# GB300 Base Configuration Template
+# ============================================================
+
+.perf_gb300_base: &perf_gb300_base
+  variables:
+    <<: *perf_variables
+    GPU: "GB300"
+    RUNNER_TAG: "lyris"
+  tags:
+    - lyris
+  before_script:
+    - export GPU="GB300"
+    - export RUNNER_TAG="lyris"
+    - export WORKDIR="$(basename "$CI_PROJECT_DIR")-pipeline-${CI_PIPELINE_ID}"
+    - export CONFIG_KEY="GB300"
+    - export CLUSTER_ACCOUNT="coreai_comparch_trtllm"
+    - export CLUSTER_PARTITION="gb300"
+    - export CLUSTER_STORAGE="/lustre/fsw/coreai_comparch_trtllm/common"
+    - export CLUSTER_LLM_DATA="/lustre/fsw/coreai_comparch_trtllm/common/llm-models-qa"
+    - export CCACHE_DIR="/lustre/fsw/coreai_comparch_trtllm/common/ccache_${GITLAB_USER_LOGIN}"
+    - export HOST="login-lyris02"
+    - export EXTRA_SRUN_PARAMS=""
+    - export CLUSTER_WORKDIR="${CLUSTER_STORAGE}/trtllm_ci/perf/${HOST}/${WORKDIR}"
+    - export MPI_TYPE="pmix"
+    - export BASE_SRUN="srun --mpi=${MPI_TYPE} -t ${TEST_TIME} -A ${CLUSTER_ACCOUNT} -N1 -p ${CLUSTER_PARTITION} -J ${CLUSTER_ACCOUNT}-trt:perf ${EXTRA_SRUN_PARAMS}"
+    - export CLUSTER_USERNAME="${CLUSTER_USERNAME}"
+    - echo "✓ GB300 runner is on the cluster, using local execution"
+  rules:
+    - if: '$TEST_TYPE == "perf" && $RUN_GB300 == "true"'
+    - if: '$TEST_TYPE == "perf" && $RUN_GB200 != "true" && $RUN_GB300 != "true"'
+
+# ============================================================
+# Stage: .pre - Validation
+# ============================================================
+
+perf:validate:gb200:
+  stage: .pre
+  <<: *perf_gb200_base
+  script: *perf_validate_common_script
+
+perf:validate:gb300:
+  stage: .pre
+  <<: *perf_gb300_base
+  script: *perf_validate_common_script
+
+# ============================================================
+# Stage: init - Initialize Configuration
+# ============================================================
+
+perf:init:gb200:
+  stage: init
+  <<: *perf_gb200_base
+  script: *perf_init_common_script
+  artifacts:
+    paths:
+      - config_GB200.env
+      - docker_image_GB200.txt
+      - download_url_GB200.txt
+
+perf:init:gb300:
+  stage: init
+  <<: *perf_gb300_base
+  script: *perf_init_common_script
+  artifacts:
+    paths:
+      - config_GB300.env
+      - docker_image_GB300.txt
+      - download_url_GB300.txt
+
+# ============================================================
+# Stage: scm - Clone Repositories
+# ============================================================
+
+perf:scm:gb200:
+  stage: scm
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:init:gb200
+      artifacts: true
+  script: *perf_scm_common_script
+  artifacts:
+    paths:
+      - config_GB200.env
+      - forest_GB200/
+
+perf:scm:gb300:
+  stage: scm
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:init:gb300
+      artifacts: true
+  script: *perf_scm_common_script
+  artifacts:
+    paths:
+      - config_GB300.env
+      - forest_GB300/
+
+# ============================================================
+# Stage: sync - Sync Data to Cluster
+# ============================================================
+
+perf:sync:gb200:
+  stage: sync
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:scm:gb200
+      artifacts: true
+  script: *perf_sync_common_script
+  artifacts:
+    paths:
+      - config_final_GB200.env
+
+perf:sync:gb300:
+  stage: sync
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:scm:gb300
+      artifacts: true
+  script: *perf_sync_common_script
+  artifacts:
+    paths:
+      - config_final_GB300.env
+
+# ============================================================
+# Stage: build - Build Wheel (optional, for source mode)
+# ============================================================
+
+perf:build:gb200:
+  stage: build
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:sync:gb200
+      artifacts: true
+  script: *perf_build_common_script
+  artifacts:
+    paths:
+      - config_final_GB200.env
+
+perf:build:gb300:
+  stage: build
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:sync:gb300
+      artifacts: true
+  script: *perf_build_common_script
+  artifacts:
+    paths:
+      - config_final_GB300.env
+
+# ============================================================
+# Stage: setup - Setup Environment
+# ============================================================
+
+perf:setup:gb200:
+  stage: setup
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:build:gb200
+      artifacts: true
+  script: *perf_setup_common_script
+  artifacts:
+    paths:
+      - config_final_GB200.env
+
+perf:setup:gb300:
+  stage: setup
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:build:gb300
+      artifacts: true
+  script: *perf_setup_common_script
+  artifacts:
+    paths:
+      - config_final_GB300.env
+
+# ============================================================
+# Stage: test - Run Single Node Performance Tests
+# ============================================================
+
+perf:test:gb200:
+  stage: test
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:setup:gb200
+      artifacts: true
+  parallel:
+    matrix:
+      - GROUP: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+  script: *perf_test_common_script
+  artifacts:
+    paths:
+      - config_final_GB200.env
+      - output/
+    when: always
+  when: always
+
+perf:test:gb300:
+  stage: test
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:setup:gb300
+      artifacts: true
+  parallel:
+    matrix:
+      - GROUP: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+  script: *perf_test_common_script
+  artifacts:
+    paths:
+      - config_final_GB300.env
+      - output/
+    when: always
+  when: always
+
+# ============================================================
+# Stage: artifacts - Collect Artifacts
+# ============================================================
+
+perf:artifacts:gb200:
+  stage: artifacts
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:test:gb200
+      artifacts: true
+  when: always
+  script: *perf_artifacts_common_script
+  artifacts:
+    name: "perf-test-results-GB200-$CI_PIPELINE_ID"
+    paths:
+      - config_final_GB200.env
+      - output/
+      - "*_GB200.tar.gz"
+    reports:
+      junit:
+        - output/merged/merged_results.xml
+        - output/tmp*/results.xml
+    expire_in: 30 days
+    when: always
+
+perf:artifacts:gb300:
+  stage: artifacts
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:test:gb300
+      artifacts: true
+  when: always
+  script: *perf_artifacts_common_script
+  artifacts:
+    name: "perf-test-results-GB300-$CI_PIPELINE_ID"
+    paths:
+      - config_final_GB300.env
+      - output/
+      - "*_GB300.tar.gz"
+    reports:
+      junit:
+        - output/merged/merged_results.xml
+        - output/tmp*/results.xml
+    expire_in: 30 days
+    when: always
+
+# ============================================================
+# Stage: analyze - Analyze Results
+# ============================================================
+
+perf:analyze:gb200:
+  stage: analyze
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:scm:gb200
+      artifacts: true
+    - job: perf:artifacts:gb200
+      artifacts: true
+  when: always
+  script: *perf_analyze_common_script
+
+perf:analyze:gb300:
+  stage: analyze
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:scm:gb300
+      artifacts: true
+    - job: perf:artifacts:gb300
+      artifacts: true
+  when: always
+  script: *perf_analyze_common_script
+
+# ============================================================
+# Stage: report - Generate Reports
+# ============================================================
+
+perf:report:gb200:
+  stage: report
+  <<: *perf_gb200_base
+  needs:
+    - job: perf:artifacts:gb200
+      artifacts: true
+  when: always
+  script: *perf_report_common_script
+
+perf:report:gb300:
+  stage: report
+  <<: *perf_gb300_base
+  needs:
+    - job: perf:artifacts:gb300
+      artifacts: true
+  when: always
+  script: *perf_report_common_script
