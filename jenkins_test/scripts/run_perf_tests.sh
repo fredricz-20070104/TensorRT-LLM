@@ -9,7 +9,7 @@
 #
 # 注意：此脚本在 cluster 上运行或通过 SSH 在中转机上运行
 
-set -euo pipefail
+set -o pipefail
 
 # ============================================
 # 脚本目录
@@ -139,12 +139,42 @@ echo "试运行: $DRY_RUN"
 echo "========================================"
 
 # ============================================
+# 步骤 0: 准备 Python 虚拟环境
+# ============================================
+echo ""
+echo "[步骤 0] 准备 Python 虚拟环境..."
+
+VENV_DIR="$SCRIPT_DIR/.venv"
+
+# 创建虚拟环境（如果不存在）
+if [[ ! -d "$VENV_DIR" ]]; then
+    echo "创建 Python 虚拟环境: $VENV_DIR"
+    python3 -m venv "$VENV_DIR"
+    
+    # 激活虚拟环境并安装依赖
+    source "$VENV_DIR/bin/activate"
+    echo "安装 Python 依赖: pyyaml"
+    pip install --quiet pyyaml
+else
+    # 激活已有的虚拟环境
+    source "$VENV_DIR/bin/activate"
+fi
+
+echo "✓ Python 虚拟环境已就绪"
+
+# ============================================
 # 步骤 1: 解析 testlist
 # ============================================
 echo ""
 echo "[步骤 1] 解析 testlist 并识别测试类型..."
 
-TESTLIST_JSON=$(python3 "$SCRIPT_DIR/parse_unified_testlist.py" "$TESTLIST" ${FILTER_MODE:+--mode $FILTER_MODE})
+# ${FILTER_MODE:+--mode $FILTER_MODE} 解释:
+# - 这是 Bash 参数扩展语法
+# - 如果 FILTER_MODE 变量有值（非空），则展开为 "--mode $FILTER_MODE"
+# - 如果 FILTER_MODE 变量为空或未设置，则展开为空字符串（不添加参数）
+# - 例如: FILTER_MODE="single-agg" -> "--mode single-agg"
+#         FILTER_MODE=""           -> ""（不添加任何参数）
+TESTLIST_JSON=$(python "$SCRIPT_DIR/parse_unified_testlist.py" "$TESTLIST" ${FILTER_MODE:+--mode $FILTER_MODE})
 
 if [[ $? -ne 0 ]]; then
     echo "错误：解析 testlist 失败"
@@ -152,7 +182,7 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # 显示统计信息
-python3 "$SCRIPT_DIR/parse_unified_testlist.py" "$TESTLIST" --summary
+python "$SCRIPT_DIR/parse_unified_testlist.py" "$TESTLIST" --summary
 
 # ============================================
 # 步骤 2: 按模式分组执行
@@ -161,14 +191,14 @@ echo ""
 echo "[步骤 2] 按测试模式执行..."
 
 # 提取各个模式的测试
-SINGLE_AGG_TESTS=$(echo "$TESTLIST_JSON" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('single-agg', [])))")
-MULTI_AGG_TESTS=$(echo "$TESTLIST_JSON" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('multi-agg', [])))")
-DISAGG_TESTS=$(echo "$TESTLIST_JSON" | python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('disagg', [])))")
+SINGLE_AGG_TESTS=$(echo "$TESTLIST_JSON" | python -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('single-agg', [])))")
+MULTI_AGG_TESTS=$(echo "$TESTLIST_JSON" | python -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('multi-agg', [])))")
+DISAGG_TESTS=$(echo "$TESTLIST_JSON" | python -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data.get('tests_by_mode', {}).get('disagg', [])))")
 
 # 统计信息
-SINGLE_COUNT=$(echo "$SINGLE_AGG_TESTS" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
-MULTI_COUNT=$(echo "$MULTI_AGG_TESTS" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
-DISAGG_COUNT=$(echo "$DISAGG_TESTS" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
+SINGLE_COUNT=$(echo "$SINGLE_AGG_TESTS" | python -c "import sys, json; print(len(json.load(sys.stdin)))")
+MULTI_COUNT=$(echo "$MULTI_AGG_TESTS" | python -c "import sys, json; print(len(json.load(sys.stdin)))")
+DISAGG_COUNT=$(echo "$DISAGG_TESTS" | python -c "import sys, json; print(len(json.load(sys.stdin)))")
 
 TOTAL_TESTS=$((SINGLE_COUNT + MULTI_COUNT + DISAGG_COUNT))
 

@@ -145,6 +145,13 @@ else
     exit 1
 fi
 
+# 上传 parse_unified_testlist.py (run_perf_tests.sh 需要)
+if [[ -f "$SCRIPT_DIR/parse_unified_testlist.py" ]]; then
+    remote_copy "$SCRIPT_DIR/parse_unified_testlist.py" "${REMOTE_PREFIX}${CLUSTER_WORKDIR}/scripts/"
+    remote_exec "chmod +x ${CLUSTER_WORKDIR}/scripts/parse_unified_testlist.py"
+    echo "✓ 已上传: parse_unified_testlist.py"
+fi
+
 # 上传 calculate_hardware_nodes.py (disagg 需要)
 if [[ -f "$SCRIPT_DIR/calculate_hardware_nodes.py" ]]; then
     remote_copy "$SCRIPT_DIR/calculate_hardware_nodes.py" "${REMOTE_PREFIX}${CLUSTER_WORKDIR}/scripts/"
@@ -156,6 +163,14 @@ if [[ -d "$SCRIPT_DIR/lib" ]]; then
     remote_mkdir "${CLUSTER_WORKDIR}/scripts/lib"
     remote_copy "$SCRIPT_DIR/lib/" "${REMOTE_PREFIX}${CLUSTER_WORKDIR}/scripts/lib/"
     echo "✓ 已上传: lib/"
+fi
+
+# 上传 testlists 目录 (TestList 模式需要)
+TESTLISTS_DIR="$SCRIPT_DIR/../testlists"
+if [[ -d "$TESTLISTS_DIR" ]]; then
+    remote_mkdir "${CLUSTER_WORKDIR}/testlists"
+    remote_copy "$TESTLISTS_DIR/" "${REMOTE_PREFIX}${CLUSTER_WORKDIR}/testlists/"
+    echo "✓ 已上传: testlists/"
 fi
 
 echo "✓ 所有脚本已上传"
@@ -173,8 +188,14 @@ REMOTE_CMD+=" --workspace ${CLUSTER_WORKDIR}/workspace"
 
 # 添加传递的参数
 for arg in "${SCRIPT_ARGS[@]:-}"; do
-    # 转义特殊字符
-    escaped_arg=$(printf '%q' "$arg")
+    # 特殊处理 testlist 路径：替换为 Cluster 上的路径
+    if [[ "$arg" == testlists/* ]]; then
+        # 将相对路径转换为 Cluster 上的绝对路径
+        escaped_arg="${CLUSTER_WORKDIR}/${arg}"
+    else
+        # 转义特殊字符
+        escaped_arg=$(printf '%q' "$arg")
+    fi
     REMOTE_CMD+=" $escaped_arg"
 done
 

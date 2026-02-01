@@ -1,0 +1,92 @@
+# Performance Test Debug Cases
+# 
+# 格式说明:
+#   test_perf_sanity.py::test_e2e[test_case_id]
+# 
+# test_case_id 格式:
+#   - Agg 模式: {test_type}-{config_yml}[-{server_config_name}]
+#   - Disagg 模式: {test_type}-{config_yml}
+# 
+# test_type:
+#   - aggr / aggr_upload: 聚合模式（单节点或多节点）
+#   - disagg / disagg_upload: 分离式模式
+# 
+# 🎯 自动识别测试类型 (无需手动标记！)
+#   - Single-Agg: 自动识别单节点测试
+#   - Multi-Agg: 自动识别多节点聚合测试（通过读取配置文件中的 gpus/gpus_per_node）
+#   - Disagg: 自动识别分离式测试（通过配置文件或命名规则）
+# 
+# ⚙️ 手动标记 (可选，用于覆盖自动识别):
+#   在行尾添加 # mode:multi-agg 或 # mode:disagg
+#   示例: test_perf_sanity.py::test_e2e[aggr-config_name]  # mode:multi-agg
+# 
+# 使用方法:
+#   1. 从 pytest 输出或 CI 日志复制失败的测试
+#   2. 粘贴到此文件（保持 test_perf_sanity.py::test_e2e[...] 格式）
+#   3. 在 Jenkins 中选择 TESTLIST = "debug_cases"
+#   4. 自动识别测试类型并路由到对应的执行脚本
+# 
+# 示例（来自实际配置文件）:
+#   test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_grace_blackwell-r1_fp4_v2_tp4_mtp3_1k1k]
+#   test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_dep8_mtp1_1k1k]
+#   test_perf_sanity.py::test_e2e[disagg_upload-deepseek-r1-fp4_1k1k_ctx1_gen1_dep8_bs768_eplb0_mtp0_ccb-UCX]
+
+# ============================================
+# Single-Agg 测试（单节点聚合）
+# ============================================
+
+# DeepSeek R1 FP4 V2 - Grace Blackwell (4 GPUs)
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_grace_blackwell-r1_fp4_v2_tp4_mtp3_1k1k]
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_grace_blackwell-r1_fp4_v2_tep4_mtp3_1k1k]
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_grace_blackwell-r1_fp4_v2_dep4_mtp1_1k1k]
+
+# DeepSeek V3.2 FP4 - Grace Blackwell
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_v32_fp4_grace_blackwell-v32_fp4_tep4_mtp3_1k1k]
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_v32_fp4_grace_blackwell-v32_fp4_dep4_mtp1_1k1k]
+
+# K2 Thinking FP4 - Grace Blackwell
+test_perf_sanity.py::test_e2e[aggr_upload-k2_thinking_fp4_grace_blackwell-k2_thinking_fp4_tep4_8k1k]
+
+# GPT-OSS 120B FP4 - Grace Blackwell
+test_perf_sanity.py::test_e2e[aggr_upload-gpt_oss_120b_fp4_grace_blackwell-gpt_oss_fp4_tp2_1k8k]
+test_perf_sanity.py::test_e2e[aggr_upload-gpt_oss_120b_fp4_grace_blackwell-gpt_oss_fp4_dep2_1k1k]
+
+# ============================================
+# Multi-Agg 测试（多节点聚合 - 2 Nodes）
+# ============================================
+
+# DeepSeek R1 FP4 V2 - 2 Nodes (8 GPUs total)
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_dep8_mtp1_1k1k]
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_dep8_mtp1_8k1k]
+test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_tep8_mtp3]
+
+# K2 Thinking FP4 - 2 Nodes (8 GPUs total)
+test_perf_sanity.py::test_e2e[aggr_upload-k2_thinking_fp4_2_nodes_grace_blackwell-k2_thinking_fp4_tep8_32k8k]
+test_perf_sanity.py::test_e2e[aggr_upload-k2_thinking_fp4_2_nodes_grace_blackwell-k2_thinking_fp4_dep8_32k8k]
+
+# ============================================
+# Disagg 测试（分离式 - 3 Nodes）
+# ============================================
+
+# DeepSeek R1 FP4 - Disaggregated (12 GPUs total, 3 nodes)
+test_perf_sanity.py::test_e2e[disagg_upload-deepseek-r1-fp4_1k1k_ctx1_gen1_dep8_bs768_eplb0_mtp0_ccb-UCX]
+
+# ============================================
+# 快速参考
+# ============================================
+#
+# 查看所有可用测试:
+#   cd tests/integration/defs/perf
+#   pytest test_perf_sanity.py --collect-only -q
+#
+# 使用 pytest -k 过滤:
+#   pytest test_perf_sanity.py -k "deepseek and grace"
+#   pytest test_perf_sanity.py -k "aggr_upload and not disagg"
+#
+# 运行单个测试:
+#   pytest test_perf_sanity.py::test_e2e[aggr_upload-deepseek_r1_fp4_v2_grace_blackwell-r1_fp4_v2_tp4_mtp3_1k1k]
+#
+# 配置文件位置:
+#   Single-Agg / Multi-Agg: tests/scripts/perf-sanity/*.yaml
+#   Disagg: tests/integration/defs/perf/disagg/test_configs/disagg/perf/*.yaml
+

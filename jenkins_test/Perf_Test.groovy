@@ -17,16 +17,40 @@ properties([
         choice(
             name: 'TESTLIST',
             choices: [
-                // 🌟 TestList 模式（推荐）
+                // 🌟 YAML 格式测试套件（推荐生产环境）
                 'gb200_unified_suite',
                 'gb300_unified_suite',
+                
+                // 🔧 TXT 格式 Debug 列表（快速调试，支持所有测试类型）
+                'debug_cases',
                 
                 // 手动调试模式
                 'manual'
             ],
-            description: '''选择测试模式:
-  - TestList: 从 YAML 文件运行测试（推荐）
-  - manual: 手动指定配置文件调试单个测试'''
+            description: '''选择测试列表:
+
+📋 YAML 格式 (.yml) - 结构化测试套件:
+  • gb200_unified_suite: GB200 完整测试套件
+  • gb300_unified_suite: GB300 完整测试套件
+  • 自动识别测试类型（single-agg/multi-agg/disagg）
+
+🔧 TXT 格式 (.txt) - Debug 快速测试（支持所有类型）:
+  • debug_cases: Debug 用测试列表
+  • 支持直接粘贴 pytest 路径
+  • 支持所有测试类型：
+    - 默认: single-agg
+    - 标记: # mode:multi-agg
+    - 标记: # mode:disagg
+  
+  示例:
+    perf/test_perf.py::test_perf[single_agg_case]
+    perf/test_perf.py::test_perf[multi_agg_case]  # mode:multi-agg
+    perf/test_perf.py::test_perf[disagg_case]  # mode:disagg
+
+🛠️ 手动模式:
+  • manual: 手动指定单个配置文件
+
+详见: jenkins_test/docs/TESTLIST_FORMAT_GUIDE.md'''
         ),
         choice(
             name: 'FILTER_MODE',
@@ -47,12 +71,11 @@ properties([
         ),
         choice(
             name: 'CLUSTER',
-            choices: ['gb300', 'gb200', 'gb200_lyris', 'local'],
+            choices: ['gb300', 'gb200', 'gb200_lyris'],
             description: '''目标集群:
-  - gb300: Lyris GB300 分区 (本地执行)
-  - gb200: Selene GB200 分区 (SSH执行)
-  - gb200_lyris: Lyris GB200 分区 (本地执行)
-  - local: 本地开发测试'''
+  - gb300: Lyris GB300 分区
+  - gb200: Selene GB200 分区  
+  - gb200_lyris: Lyris GB200 分区'''
         ),
         string(
             name: 'CONFIG_FILE',
@@ -95,17 +118,21 @@ pipeline {
     
     options {
         timestamps()
-        timeout(time: 6, unit: 'HOURS')
         buildDiscarder(logRotator(numToKeepStr: '30'))
-        disableConcurrentBuilds()
     }
     
     environment {
         // 工作目录
         WORKSPACE_ROOT = "${WORKSPACE}"
         TRTLLM_DIR = "${WORKSPACE}/TensorRT-LLM"
+        // TODO: Fix the relative path issue to trt_jenkins
         SCRIPTS_DIR = "${WORKSPACE}/jenkins_test/scripts"
         TESTLISTS_DIR = "${WORKSPACE}/jenkins_test/testlists"
+        
+        // 输出目录（每个 build 独立）
+        OUTPUT_DIR = "${WORKSPACE}/output_${BUILD_NUMBER}"
+        DISAGG_WORKSPACE = "${OUTPUT_DIR}/disagg"
+        MULTI_AGG_WORKSPACE = "${OUTPUT_DIR}/multi_agg"
         
         // 用户参数
         TESTLIST = "${params.TESTLIST}"
@@ -178,6 +205,49 @@ pipeline {
                 script {
                     echo "准备工作环境..."
                     
+                    // 第一步：加载集群配置
+                    echo ""
+                    echo "[步骤 1] 加载集群配置: ${CLUSTER}"
+                    
+                    // 使用系统 Python 调用配置加载脚本（不需要虚拟环境，只用标准库）
+                    def configJson = sh(
+                        script: "python3 ${SCRIPTS_DIR}/load_cluster_config.py ${CLUSTER}",
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "配置 JSON:"
+                    echo configJson
+                    
+                    // 解析 JSON 并设置环境变量
+                    def configMap = readJSON text: configJson
+                    
+                    configMap.each { key, value ->
+                        env."${key}" = value
+                        echo "${key}=${value}"
+                    }
+                    
+                    // 设置 Docker 镜像（如果用户没有指定）
+                    if (!DOCKER_IMAGE) {
+                        env.DOCKER_IMAGE = configMap['DOCKER_IMAGE'] ?: 'nvcr.io/nvidia/tensorrt-llm:latest'
+                    } else {
+                        env.DOCKER_IMAGE = DOCKER_IMAGE
+                    }
+                    
+                    echo ""
+                    echo "✓ 集群配置加载完成"
+                    echo "  集群名称: ${env.CLUSTER_NAME}"
+                    echo "  集群类型: ${env.CLUSTER_TYPE}"
+                    if (env.CLUSTER_TYPE == 'ssh') {
+                        echo "  远程主机: ${env.CLUSTER_USER}@${env.CLUSTER_HOST}"
+                    }
+                    echo "  Slurm 分区: ${env.CLUSTER_PARTITION}"
+                    echo "  Slurm 账号: ${env.CLUSTER_ACCOUNT}"
+                    echo "  Docker 镜像: ${env.DOCKER_IMAGE}"
+                    
+                    // 第二步：克隆或更新 TensorRT-LLM 仓库
+                    echo ""
+                    echo "[步骤 2] 准备 TensorRT-LLM 仓库..."
+                    
                     // 克隆或更新 TensorRT-LLM 仓库
                     if (fileExists("${TRTLLM_DIR}")) {
                         echo "TensorRT-LLM 目录已存在，更新..."
@@ -189,9 +259,9 @@ pipeline {
                             """
                         }
                     } else {
-                        echo "克隆 TensorRT-LLM 仓库..."
+                        echo "克隆 TensorRT-LLM 仓库（完整克隆）..."
                         sh """
-                            git clone --depth 1 --branch ${TRTLLM_BRANCH} ${TRTLLM_REPO} ${TRTLLM_DIR}
+                            git clone --branch ${TRTLLM_BRANCH} ${TRTLLM_REPO} ${TRTLLM_DIR}
                         """
                     }
                     
@@ -200,10 +270,20 @@ pipeline {
                     
                     if (TEST_MODE == 'disagg') {
                         requiredPaths = [
-                            "${TRTLLM_DIR}/jenkins/scripts/perf/disaggregated/submit.py",
-                            "${TRTLLM_DIR}/tests/integration/test_lists",
+                            // Disagg 执行脚本
                             "${SCRIPTS_DIR}/run_disagg_test.sh",
-                            "${SCRIPTS_DIR}/calculate_hardware_nodes.py"
+                            "${SCRIPTS_DIR}/calculate_hardware_nodes.py",
+                            
+                            // TensorRT-LLM Jenkins 脚本
+                            "${TRTLLM_DIR}/jenkins/scripts/perf/disaggregated/submit.py",
+                            "${TRTLLM_DIR}/jenkins/scripts/perf/disaggregated/slurm_launch_draft.sh",
+                            "${TRTLLM_DIR}/jenkins/scripts/slurm_run.sh",
+                            "${TRTLLM_DIR}/jenkins/scripts/slurm_install.sh",
+                            
+                            // TensorRT-LLM 测试文件
+                            "${TRTLLM_DIR}/tests/integration/defs/perf/test_perf_sanity.py",
+                            "${TRTLLM_DIR}/tests/integration/test_lists",
+                            "${TRTLLM_DIR}/tests/integration/defs/perf/disagg/test_configs"
                         ]
                     } else {
                         requiredPaths = [
@@ -215,8 +295,7 @@ pipeline {
                     }
                     
                     // 通用脚本
-                    requiredPaths.add("${SCRIPTS_DIR}/lib/load_cluster_config.sh")
-                    requiredPaths.add("${SCRIPTS_DIR}/lib/remote.sh")
+                    requiredPaths.add("${SCRIPTS_DIR}/load_cluster_config.py")
                     requiredPaths.add("${SCRIPTS_DIR}/config/clusters.conf")
                     
                     for (path in requiredPaths) {
@@ -231,84 +310,37 @@ pipeline {
         }
         
         // ========================================
-        // Stage 3: 加载集群配置
-        // ========================================
-        stage('加载集群配置') {
-            steps {
-                script {
-                    echo "加载集群配置: ${CLUSTER}"
-                    
-                    // 加载集群配置
-                    def configScript = """
-                        source ${SCRIPTS_DIR}/lib/load_cluster_config.sh ${CLUSTER}
-                        
-                        echo "CLUSTER_NAME=\${CLUSTER_NAME}"
-                        echo "CLUSTER_HOST=\${CLUSTER_HOST}"
-                        echo "CLUSTER_USER=\${CLUSTER_USER}"
-                        echo "CLUSTER_TYPE=\${CLUSTER_TYPE}"
-                        echo "CLUSTER_PARTITION=\${CLUSTER_PARTITION}"
-                        echo "CLUSTER_ACCOUNT=\${CLUSTER_ACCOUNT}"
-                        echo "CLUSTER_STORAGE=\${CLUSTER_STORAGE}"
-                        echo "CLUSTER_LLM_DATA=\${CLUSTER_LLM_DATA}"
-                        echo "MPI_TYPE=\${MPI_TYPE}"
-                        echo "EXTRA_SRUN_PARAMS=\${EXTRA_SRUN_PARAMS}"
-                    """
-                    
-                    def configOutput = sh(script: configScript, returnStdout: true).trim()
-                    
-                    // 解析配置
-                    def configMap = [:]
-                    configOutput.split('\n').each { line ->
-                        if (line.startsWith('✓')) {
-                            echo line
-                        } else {
-                            def parts = line.split('=', 2)
-                            if (parts.size() == 2) {
-                                configMap[parts[0]] = parts[1]
-                                env."${parts[0]}" = parts[1]
-                            }
-                        }
-                    }
-                    
-                    // 设置 Docker 镜像
-                    if (!DOCKER_IMAGE) {
-                        env.DOCKER_IMAGE = configMap['DOCKER_IMAGE'] ?: 'nvcr.io/nvidia/tensorrt-llm:latest'
-                    }
-                    
-                    echo "✓ 集群配置加载完成"
-                }
-            }
-        }
-        
-        // ========================================
-        // Stage 4: 运行测试
+        // Stage 3: 运行测试
         // ========================================
         stage('运行测试') {
             steps {
                 script {
                     echo "开始执行测试..."
                     
-                    def testScript = ""
-                    def scriptArgs = []
+                    // =====================================
+                    // 确定要执行的远程脚本
+                    // =====================================
+                    def remoteScript = ""
+                    def remoteScriptArgs = []
                     
                     if (env.USE_TESTLIST == 'true') {
                         // =====================================
                         // TestList 模式：使用统一脚本
                         // =====================================
-                        testScript = "${SCRIPTS_DIR}/run_perf_tests.sh"
-                        scriptArgs = [
-                            "--testlist", env.TESTLIST_FILE,
-                            "--trtllm-dir", TRTLLM_DIR
-                        ]
+                        remoteScript = "run_perf_tests.sh"
+                        
+                        // testlist 文件相对路径（会被同步到 Cluster）
+                        def testlistRelPath = "testlists/${TESTLIST}.yml"
+                        remoteScriptArgs += ["--testlist", testlistRelPath]
                         
                         // 添加过滤模式
                         if (FILTER_MODE != 'all') {
-                            scriptArgs += ["--mode", FILTER_MODE]
+                            remoteScriptArgs += ["--mode", FILTER_MODE]
                         }
                         
                         // 添加 pytest -k 过滤
                         if (PYTEST_K) {
-                            scriptArgs += ["-k", PYTEST_K]
+                            remoteScriptArgs += ["-k", PYTEST_K]
                         }
                         
                     } else {
@@ -316,47 +348,37 @@ pipeline {
                         // 手动调试模式：调用单独脚本
                         // =====================================
                         if (env.TEST_MODE == 'disagg') {
-                            testScript = "${SCRIPTS_DIR}/run_disagg_test.sh"
-                            scriptArgs = [
-                                "--config-file", CONFIG_FILE,
-                                "--trtllm-dir", TRTLLM_DIR,
-                                "--workspace", "${WORKSPACE}/disagg_workspace"
-                            ]
+                            remoteScript = "run_disagg_test.sh"
+                            remoteScriptArgs += ["--config-file", CONFIG_FILE]
                         } else if (env.TEST_MODE == 'single-agg') {
-                            testScript = "${SCRIPTS_DIR}/run_single_agg_test.sh"
-                            scriptArgs = [
-                                "--config-file", CONFIG_FILE,
-                                "--trtllm-dir", TRTLLM_DIR
-                            ]
+                            remoteScript = "run_single_agg_test.sh"
+                            remoteScriptArgs += ["--config-file", CONFIG_FILE]
                         } else if (env.TEST_MODE == 'multi-agg') {
-                            testScript = "${SCRIPTS_DIR}/run_multi_agg_test.sh"
-                            scriptArgs = [
-                                "--config-file", CONFIG_FILE,
-                                "--trtllm-dir", TRTLLM_DIR,
-                                "--workspace", "${WORKSPACE}/multi_agg_workspace"
-                            ]
+                            remoteScript = "run_multi_agg_test.sh"
+                            remoteScriptArgs += ["--config-file", CONFIG_FILE]
                         }
                         
                         // 添加 pytest -k 过滤
-                        if (PYTEST_K) {
-                            scriptArgs += ["-k", PYTEST_K]
+                        if (PYTEST_K && env.TEST_MODE != 'disagg') {
+                            remoteScriptArgs += ["-k", PYTEST_K]
                         }
                     }
                     
                     // 添加 dry-run 标志
                     if (DRY_RUN == 'true') {
-                        scriptArgs += ["--dry-run"]
+                        remoteScriptArgs += ["--dry-run"]
                     }
                     
-                    // 构造完整命令
-                    def cmd = "${testScript} ${scriptArgs.join(' ')}"
-                    
+                    // =====================================
+                    // 使用 sync_and_run.sh 同步并执行
+                    // =====================================
                     echo ""
-                    echo "执行命令:"
-                    echo "  ${cmd}"
+                    echo "使用 sync_and_run.sh 同步并在 Cluster 上执行..."
+                    echo "  远程脚本: ${remoteScript}"
+                    echo "  脚本参数: ${remoteScriptArgs.join(' ')}"
                     echo ""
                     
-                    // 执行测试脚本
+                    // 执行 sync_and_run.sh
                     def result = sh(
                         script: """
                             # 导出集群配置环境变量
@@ -369,9 +391,14 @@ pipeline {
                             export CLUSTER_USER='${env.CLUSTER_USER}'
                             export CLUSTER_TYPE='${env.CLUSTER_TYPE}'
                             export CLUSTER_NAME='${env.CLUSTER_NAME}'
+                            export CLUSTER_WORKDIR='${env.CLUSTER_WORKDIR}'
                             
-                            # 执行测试脚本
-                            ${cmd}
+                            # 调用 sync_and_run.sh
+                            ${SCRIPTS_DIR}/sync_and_run.sh \\
+                                --trtllm-dir ${TRTLLM_DIR} \\
+                                --workspace ${OUTPUT_DIR} \\
+                                --remote-script ${remoteScript} \\
+                                ${remoteScriptArgs.join(' ')}
                         """,
                         returnStatus: true
                     )
@@ -427,8 +454,8 @@ pipeline {
                 
                 // 尝试收集错误日志
                 def logPaths = [
-                    "${WORKSPACE}/disagg_workspace/slurm_*.log",
-                    "${WORKSPACE}/multi_agg_workspace/*.log"
+                    "output_${BUILD_NUMBER}/disagg/slurm_*.log",
+                    "output_${BUILD_NUMBER}/multi_agg/*.log"
                 ]
                 
                 for (pattern in logPaths) {
@@ -449,8 +476,12 @@ pipeline {
             script {
                 echo "清理临时文件..."
                 
-                // 可选：清理临时工作目录
-                // sh "rm -rf ${WORKSPACE}/disagg_workspace ${WORKSPACE}/multi_agg_workspace"
+                echo "清理旧的输出目录..."
+                // 保留最近 5 个 build 的输出
+                sh """
+                    cd ${WORKSPACE_ROOT}
+                    ls -dt output_* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+                """
             }
         }
     }

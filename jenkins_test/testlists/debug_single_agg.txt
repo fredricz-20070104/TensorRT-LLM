@@ -1,0 +1,22 @@
+# Debug Test Cases - Single-Agg Mode
+# Format: pytest_path  [# mode:test_mode]
+# 
+# 默认所有测试为 single-agg 模式
+# 如果需要指定其他模式，在行尾添加 # mode:multi-agg 或 # mode:disagg
+#
+# 示例用法：
+#   1. 从 pytest 输出复制测试路径
+#   2. 粘贴到此文件
+#   3. 在 Jenkins 中选择 TESTLIST = "debug_single_agg"
+
+# GPT-Next 2B 测试
+perf/test_perf.py::test_perf[gpt_next_2b-cppmanager-exe-plugin-float16-input_output_len:128,8]
+perf/test_perf.py::test_perf[gpt_next_2b-cppmanager-exe-plugin-float16-input_output_len:256,16]
+
+# Llama3.1 8B 测试
+perf/test_perf.py::test_perf[llama3_8b-float16-tp1-input_len:512]
+perf/test_perf.py::test_perf[llama3_8b-float16-tp1-input_len:1024]
+
+# 其他模型测试
+accuracy/test_llm_api_pytorch.py::TestLlama3_1_8B::test_nvfp4
+accuracy/test_llm_api_pytorch.py::TestLlama3_1_8BInstruct::test_chunked_prefill[attn_backend=FLASHINFER]

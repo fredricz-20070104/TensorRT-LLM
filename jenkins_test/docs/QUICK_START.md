@@ -66,7 +66,7 @@ CLUSTER: gb200
 |------|------|------|
 | **TESTLIST** | 测试套件名称 | `gb200_unified_suite`<br>`gb300_unified_suite`<br>`manual` |
 | **FILTER_MODE** | 测试类型过滤 | `all` / `single-agg` / `multi-agg` / `disagg` |
-| **CLUSTER** | 目标集群 | `gb200` / `gb300` / `local` |
+| **CLUSTER** | 目标集群 | `gb200` / `gb300` / `gb200_lyris` |
 | **PYTEST_K** | pytest -k 过滤表达式 | `"deepseek"` / `"deepseek and not fp8"`<br>**注意：仅支持 single-agg 和 multi-agg** |
 | **CONFIG_FILE** | 配置文件（手动模式） | `deepseek_r1_fp4_v2_grace_blackwell` |
 | **MANUAL_TEST_MODE** | 测试类型（手动模式） | `single-agg` / `multi-agg` / `disagg` |
