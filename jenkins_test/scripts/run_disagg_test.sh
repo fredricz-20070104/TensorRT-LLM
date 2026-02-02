@@ -239,91 +239,127 @@ echo "  总 GPU 数: $TOTAL_GPUS"
 echo "  每节点 GPU 数: $GPUS_PER_NODE"
 
 # ============================================
-# 步骤 4: 生成 sbatch 脚本
+# 步骤 4: 准备 submit.py 所需的输入文件
 # ============================================
 echo ""
-echo "[步骤 4] 生成 sbatch 脚本..."
-
-SBATCH_SCRIPT="$WORKSPACE/sbatch_disagg.sh"
-SUBMIT_PY="$TRTLLM_DIR/jenkins/scripts/perf/disaggregated/submit.py"
-
-if [[ ! -f "$SUBMIT_PY" ]]; then
-    echo "错误：找不到 submit.py: $SUBMIT_PY"
-    exit 1
-fi
+echo "[步骤 4] 准备 submit.py 输入文件..."
 
 # 从环境变量获取 cluster 配置（由 Jenkins 设置）
 CLUSTER_ACCOUNT="${CLUSTER_ACCOUNT:-coreai_comparch_trtllm}"
 CLUSTER_PARTITION="${CLUSTER_PARTITION:-batch}"
 MPI_TYPE="${MPI_TYPE:-pmix}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-nvcr.io/nvidia/tensorrt-llm:latest}"
+CLUSTER_LLM_DATA="${CLUSTER_LLM_DATA:-/lustre/fsw/coreai_comparch_trtllm/common}"
 
-cat > "$SBATCH_SCRIPT" << EOFSBATCH
+# 4.1 创建 test list 文件
+TEST_LIST_FILE="$WORKSPACE/test_list_disagg.txt"
+cat > "$TEST_LIST_FILE" << EOF
+perf/test_perf_sanity.py::test_e2e[disagg_upload-${CONFIG_NAME}]
+EOF
+echo "✓ 生成 test list: $TEST_LIST_FILE"
+
+# 4.2 创建 script prefix 文件（包含 SBATCH 指令和环境变量）
+SCRIPT_PREFIX_FILE="$WORKSPACE/slurm_launch_prefix.sh"
+cat > "$SCRIPT_PREFIX_FILE" << EOFPREFIX
 #!/bin/bash
+#SBATCH --output=$WORKSPACE/slurm_%j.log
 #SBATCH --nodes=$TOTAL_NODES
 #SBATCH --ntasks=$TOTAL_GPUS
 #SBATCH --ntasks-per-node=$GPUS_PER_NODE
 #SBATCH --gpus-per-node=$GPUS_PER_NODE
 #SBATCH --partition=$CLUSTER_PARTITION
 #SBATCH --account=$CLUSTER_ACCOUNT
-#SBATCH --output=$WORKSPACE/slurm_%j.log
-#SBATCH --error=$WORKSPACE/slurm_%j.log
 #SBATCH --job-name=disagg_perf_test
+#SBATCH --time=04:00:00
 
 set -xEeuo pipefail
+trap 'rc=\\\$?; echo "Error in file \\\${BASH_SOURCE[0]} on line \\\$LINENO: \\\$BASH_COMMAND (exit \\\$rc)"; exit \\\$rc' ERR
 
-echo "=========================================="
-echo "Slurm Job ID: \$SLURM_JOB_ID"
-echo "Slurm Nodelist: \$SLURM_NODELIST"
-echo "Total Nodes: $TOTAL_NODES"
-echo "Total GPUs: $TOTAL_GPUS"
-echo "GPUs per Node: $GPUS_PER_NODE"
-echo "Partition: $CLUSTER_PARTITION"
-echo "Account: $CLUSTER_ACCOUNT"
-echo "=========================================="
+echo "Starting Slurm job \\\$SLURM_JOB_ID on \\\$SLURM_NODELIST"
+export jobWorkspace=$WORKSPACE/disagg_workspace
+export llmSrcNode=$TRTLLM_DIR
+export stageName="disagg_perf_test_${CONFIG_NAME}"
+export perfMode=true
+export resourcePathNode=$TRTLLM_DIR
+export pytestCommand="pytest perf/test_perf_sanity.py::test_e2e[disagg_upload-${CONFIG_NAME}] -vv --junit-xml=$WORKSPACE/results.xml"
+export coverageConfigFile=$WORKSPACE/coverage_config.json
+export NVIDIA_IMEX_CHANNELS=\\\${NVIDIA_IMEX_CHANNELS:-0}
+export NVIDIA_VISIBLE_DEVICES=\\\${NVIDIA_VISIBLE_DEVICES:-\\\$(seq -s, 0 \\\$((\\\$(nvidia-smi --query-gpu=count -i 0 --format=csv,noheader)-1)))}
+EOFPREFIX
+echo "✓ 生成 script prefix: $SCRIPT_PREFIX_FILE"
 
-cd $TRTLLM_DIR
+# 4.3 创建 srun args 文件
+SRUN_ARGS_FILE="$WORKSPACE/slurm_srun_args.txt"
+cat > "$SRUN_ARGS_FILE" << EOFSRUN
+--container-name=disagg_test_\${SLURM_JOB_ID}
+--container-image=${DOCKER_IMAGE}
+--container-workdir=$WORKSPACE/disagg_workspace
+--container-mounts=${CLUSTER_LLM_DATA}:/data,${TRTLLM_DIR}:${TRTLLM_DIR}
+--mpi=${MPI_TYPE}
+EOFSRUN
+echo "✓ 生成 srun args: $SRUN_ARGS_FILE"
 
-# 调用 submit.py 执行 disagg 测试
-# 注意：submit.py 会处理所有的 disagg 逻辑
-python3 $SUBMIT_PY \\
-    --run-ci \\
-    --llm-src $TRTLLM_DIR \\
-    --config $CONFIG_FULL_PATH
+# 4.4 准备其他文件路径
+DRAFT_LAUNCH_SH="$TRTLLM_DIR/jenkins/scripts/perf/disaggregated/slurm_launch_draft.sh"
+LAUNCH_SH="$WORKSPACE/slurm_launch_generated.sh"
+RUN_SH="$TRTLLM_DIR/jenkins/scripts/slurm_run.sh"
+INSTALL_SH="$TRTLLM_DIR/jenkins/scripts/slurm_install.sh"
+SUBMIT_PY="$TRTLLM_DIR/jenkins/scripts/perf/disaggregated/submit.py"
 
-exit_code=\$?
+# 验证文件存在
+for file in "$DRAFT_LAUNCH_SH" "$RUN_SH" "$INSTALL_SH" "$SUBMIT_PY"; do
+    if [[ ! -f "$file" ]]; then
+        echo "错误：找不到文件: $file"
+        exit 1
+    fi
+done
 
-echo "=========================================="
-echo "Test completed with exit code: \$exit_code"
-echo "=========================================="
+echo "✓ 所有输入文件准备完成"
 
-exit \$exit_code
-EOFSBATCH
-
-chmod +x "$SBATCH_SCRIPT"
-
-echo "sbatch 脚本已生成: $SBATCH_SCRIPT"
+# ============================================
+# 步骤 5: 调用 submit.py 生成 launch 脚本
+# ============================================
 echo ""
-echo "脚本内容:"
+echo "[步骤 5] 调用 submit.py 生成 launch 脚本..."
+
+python3 "$SUBMIT_PY" \
+    --run-ci \
+    --llm-src "$TRTLLM_DIR" \
+    --test-list "$TEST_LIST_FILE" \
+    --draft-launch-sh "$DRAFT_LAUNCH_SH" \
+    --launch-sh "$LAUNCH_SH" \
+    --run-sh "$RUN_SH" \
+    --install-sh "$INSTALL_SH" \
+    --script-prefix "$SCRIPT_PREFIX_FILE" \
+    --srun-args "$SRUN_ARGS_FILE"
+
+if [[ ! -f "$LAUNCH_SH" ]]; then
+    echo "错误：submit.py 未生成 launch 脚本: $LAUNCH_SH"
+    exit 1
+fi
+
+echo "✓ Launch 脚本已生成: $LAUNCH_SH"
+echo ""
+echo "生成的脚本内容:"
 echo "----------------------------------------"
-cat "$SBATCH_SCRIPT"
+cat "$LAUNCH_SH"
 echo "----------------------------------------"
 
 # ============================================
-# 步骤 5: 提交作业
+# 步骤 6: 提交作业
 # ============================================
 if [[ "$DRY_RUN" == "true" ]]; then
     echo ""
     echo "[试运行模式] 跳过实际提交"
     echo "要手动提交，请运行:"
-    echo "  sbatch $SBATCH_SCRIPT"
+    echo "  sbatch $LAUNCH_SH"
     exit 0
 fi
 
 echo ""
-echo "[步骤 5] 提交 Slurm 作业..."
+echo "[步骤 6] 提交 Slurm 作业..."
 
-SUBMIT_OUTPUT=$(sbatch "$SBATCH_SCRIPT")
+SUBMIT_OUTPUT=$(sbatch "$LAUNCH_SH")
 echo "$SUBMIT_OUTPUT"
 
 JOB_ID=$(echo "$SUBMIT_OUTPUT" | awk '{print $NF}')
