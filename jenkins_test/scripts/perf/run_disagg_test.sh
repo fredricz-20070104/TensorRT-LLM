@@ -251,14 +251,36 @@ MPI_TYPE="${MPI_TYPE:-pmix}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-nvcr.io/nvidia/tensorrt-llm:latest}"
 CLUSTER_LLM_DATA="${CLUSTER_LLM_DATA:-/lustre/fsw/coreai_comparch_trtllm/common}"
 
+# 从环境变量读取自定义测试模块配置（可选）
+PERF_TEST_MODULE="${PERF_TEST_MODULE:-perf/test_perf_sanity.py}"
+PERF_TEST_FUNCTION="${PERF_TEST_FUNCTION:-test_e2e}"
+PERF_TEST_PREFIX="${PERF_TEST_PREFIX:-disagg_upload}"
+
+echo "测试模块配置:"
+echo "  测试模块: $PERF_TEST_MODULE"
+echo "  测试函数: $PERF_TEST_FUNCTION"
+echo "  测试前缀: $PERF_TEST_PREFIX"
+
+# 判断是否需要 trtllm-llmapi-launch（对齐 L0_Test.groovy）
+# 当节点数 > 1 或每节点 GPU 数 > 1 时，需要 llmapi-launch 来管理多进程通信
+PYTEST_UTIL=""
+if [[ "$TOTAL_NODES" -gt 1 ]] || [[ "$GPUS_PER_NODE" -gt 1 ]]; then
+    PYTEST_UTIL="$TRTLLM_DIR/tensorrt_llm/llmapi/trtllm-llmapi-launch"
+    echo "✓ 将使用 trtllm-llmapi-launch (多节点/多GPU)"
+else
+    echo "✓ 单节点单GPU，不使用 trtllm-llmapi-launch"
+fi
+
 # 4.1 创建 test list 文件
 TEST_LIST_FILE="$WORKSPACE/test_list_disagg.txt"
 cat > "$TEST_LIST_FILE" << EOF
-perf/test_perf_sanity.py::test_e2e[disagg_upload-${CONFIG_NAME}]
+${PERF_TEST_MODULE}::${PERF_TEST_FUNCTION}[${PERF_TEST_PREFIX}-${CONFIG_NAME}]
 EOF
 echo "✓ 生成 test list: $TEST_LIST_FILE"
+echo "  内容: ${PERF_TEST_MODULE}::${PERF_TEST_FUNCTION}[${PERF_TEST_PREFIX}-${CONFIG_NAME}]"
 
 # 4.2 创建 script prefix 文件（包含 SBATCH 指令和环境变量）
+# 完全对齐 L0_Test.groovy 的实现
 SCRIPT_PREFIX_FILE="$WORKSPACE/slurm_launch_prefix.sh"
 cat > "$SCRIPT_PREFIX_FILE" << EOFPREFIX
 #!/bin/bash
@@ -276,12 +298,18 @@ set -xEeuo pipefail
 trap 'rc=\\\$?; echo "Error in file \\\${BASH_SOURCE[0]} on line \\\$LINENO: \\\$BASH_COMMAND (exit \\\$rc)"; exit \\\$rc' ERR
 
 echo "Starting Slurm job \\\$SLURM_JOB_ID on \\\$SLURM_NODELIST"
+
+# 导出基础环境变量
 export jobWorkspace=$WORKSPACE/disagg_workspace
 export llmSrcNode=$TRTLLM_DIR
 export stageName="disagg_perf_test_${CONFIG_NAME}"
 export perfMode=true
 export resourcePathNode=$TRTLLM_DIR
-export pytestCommand="pytest perf/test_perf_sanity.py::test_e2e[disagg_upload-${CONFIG_NAME}] -vv --junit-xml=$WORKSPACE/results.xml"
+
+# 构造完整的 pytestCommand（对齐 L0_Test.groovy）
+# 包含必要的环境变量、llmapi-launch（如果需要）和完整的 pytest 参数
+export pytestCommand="LLM_ROOT=$TRTLLM_DIR LLM_BACKEND_ROOT=$TRTLLM_DIR/triton_backend LLM_MODELS_ROOT=$CLUSTER_LLM_DATA MODEL_CACHE_DIR=$CLUSTER_LLM_DATA COLUMNS=300 NCCL_DEBUG=INFO $PYTEST_UTIL pytest -vv --timeout-method=thread --timeout=3600 --rootdir $TRTLLM_DIR/tests/integration/defs --test-prefix=${PERF_TEST_PREFIX} --output-dir=$WORKSPACE/ --csv=$WORKSPACE/report.csv -o junit_logging=out-err --junit-xml=$WORKSPACE/results.xml ${PERF_TEST_MODULE}::${PERF_TEST_FUNCTION}[${PERF_TEST_PREFIX}-${CONFIG_NAME}]"
+
 export coverageConfigFile=$WORKSPACE/coverage_config.json
 export NVIDIA_IMEX_CHANNELS=\\\${NVIDIA_IMEX_CHANNELS:-0}
 export NVIDIA_VISIBLE_DEVICES=\\\${NVIDIA_VISIBLE_DEVICES:-\\\$(seq -s, 0 \\\$((\\\$(nvidia-smi --query-gpu=count -i 0 --format=csv,noheader)-1)))}

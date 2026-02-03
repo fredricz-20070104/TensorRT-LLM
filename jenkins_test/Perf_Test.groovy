@@ -125,8 +125,7 @@ pipeline {
         // 工作目录
         WORKSPACE_ROOT = "${WORKSPACE}"
         TRTLLM_DIR = "${WORKSPACE}/TensorRT-LLM"
-        // TODO: Fix the relative path issue to trt_jenkins
-        SCRIPTS_DIR = "${WORKSPACE}/jenkins_test/scripts"
+        SCRIPTS_DIR = "${WORKSPACE}/jenkins_test/scripts/perf"
         TESTLISTS_DIR = "${WORKSPACE}/jenkins_test/testlists"
         
         // 输出目录（每个 build 独立）
@@ -296,7 +295,7 @@ pipeline {
                     
                     // 通用脚本
                     requiredPaths.add("${SCRIPTS_DIR}/load_cluster_config.py")
-                    requiredPaths.add("${SCRIPTS_DIR}/config/clusters.conf")
+                    requiredPaths.add("${WORKSPACE}/jenkins_test/config/clusters.conf")
                     
                     for (path in requiredPaths) {
                         if (!fileExists(path)) {
