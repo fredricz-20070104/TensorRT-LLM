@@ -124,6 +124,12 @@ if [[ -z "$TRTLLM_DIR" ]]; then
     exit 1
 fi
 
+# 处理 TESTLIST 路径：如果是相对路径，转换为基于 TRTLLM_DIR 的绝对路径
+if [[ ! "$TESTLIST" = /* ]]; then
+    # 相对路径，转换为绝对路径（相对于 TRTLLM_DIR）
+    TESTLIST="$TRTLLM_DIR/$TESTLIST"
+fi
+
 if [[ ! -f "$TESTLIST" ]]; then
     echo "错误：testlist 文件不存在: $TESTLIST"
     exit 1

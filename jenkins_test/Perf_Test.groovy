@@ -14,43 +14,23 @@
 // ============================================
 properties([
     parameters([
-        choice(
+        string(
             name: 'TESTLIST',
-            choices: [
-                // 🌟 YAML 格式测试套件（推荐生产环境）
-                'gb200_unified_suite',
-                'gb300_unified_suite',
-                
-                // 🔧 TXT 格式 Debug 列表（快速调试，支持所有测试类型）
-                'debug_cases',
-                
-                // 手动调试模式
-                'manual'
-            ],
-            description: '''选择测试列表:
+            defaultValue: 'llm_perf_sanity.yml',
+            description: '''Testlist 文件名（包含扩展名 .yml 或 .txt）
 
-📋 YAML 格式 (.yml) - 结构化测试套件:
-  • gb200_unified_suite: GB200 完整测试套件
-  • gb300_unified_suite: GB300 完整测试套件
-  • 自动识别测试类型（single-agg/multi-agg/disagg）
+📂 位置: TensorRT-LLM/tests/integration/test_lists/qa/
 
-🔧 TXT 格式 (.txt) - Debug 快速测试（支持所有类型）:
-  • debug_cases: Debug 用测试列表
-  • 支持直接粘贴 pytest 路径
-  • 支持所有测试类型：
-    - 默认: single-agg
-    - 标记: # mode:multi-agg
-    - 标记: # mode:disagg
-  
-  示例:
-    perf/test_perf.py::test_perf[single_agg_case]
-    perf/test_perf.py::test_perf[multi_agg_case]  # mode:multi-agg
-    perf/test_perf.py::test_perf[disagg_case]  # mode:disagg
+📋 示例:
+  • llm_perf_sanity.yml             - 性能 sanity 测试（推荐）
+  • llm_perf_core.yml               - 核心性能测试
+  • llm_function_core.txt           - 核心功能测试
+  • llm_function_multinode.txt      - 多节点功能测试
+  • llm_triton_integration.txt      - Triton 集成测试
+  • manual                          - 手动指定单个配置文件
 
-🛠️ 手动模式:
-  • manual: 手动指定单个配置文件
-
-详见: jenkins_test/docs/TESTLIST_FORMAT_GUIDE.md'''
+💡 查看所有可用的 testlists:
+   ls TensorRT-LLM/tests/integration/test_lists/qa/'''
         ),
         choice(
             name: 'FILTER_MODE',
@@ -126,7 +106,7 @@ pipeline {
         WORKSPACE_ROOT = "${WORKSPACE}"
         TRTLLM_DIR = "${WORKSPACE}/TensorRT-LLM"
         SCRIPTS_DIR = "${WORKSPACE}/jenkins_test/scripts/perf"
-        TESTLISTS_DIR = "${WORKSPACE}/jenkins_test/testlists"
+        TESTLISTS_DIR = "${TRTLLM_DIR}/tests/integration/test_lists/qa"
         
         // 输出目录（每个 build 独立）
         OUTPUT_DIR = "${WORKSPACE}/output_${BUILD_NUMBER}"
@@ -184,7 +164,7 @@ pipeline {
                     } else {
                         // TestList 模式：使用统一的 run_perf_tests.sh
                         env.USE_TESTLIST = 'true'
-                        env.TESTLIST_FILE = "${TESTLISTS_DIR}/${TESTLIST}.yml"
+                        env.TESTLIST_FILE = "${TESTLISTS_DIR}/${TESTLIST}"
                         
                         echo "运行模式: TestList"
                         echo "TestList 文件: ${env.TESTLIST_FILE}"
@@ -328,8 +308,8 @@ pipeline {
                         // =====================================
                         remoteScript = "run_perf_tests.sh"
                         
-                        // testlist 文件相对路径（会被同步到 Cluster）
-                        def testlistRelPath = "testlists/${TESTLIST}.yml"
+                        // testlist 文件相对路径（从 TensorRT-LLM 仓库的相对路径）
+                        def testlistRelPath = "tests/integration/test_lists/qa/${TESTLIST}"
                         remoteScriptArgs += ["--testlist", testlistRelPath]
                         
                         // 添加过滤模式
