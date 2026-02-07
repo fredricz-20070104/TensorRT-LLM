@@ -3,6 +3,8 @@ metadata:
   supported_gpus:
   - B200
   - B300
+hardware:
+  gpus_per_node: 4
 server_configs:
   - name: "gpt_oss_fp4_dep4_1k8k"
     model_name: "gpt_oss_120b_fp4"

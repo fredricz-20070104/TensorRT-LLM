@@ -9,7 +9,9 @@ def get_hardware_config(config, benchmark_mode):
     hardware = config.get("hardware", {})
     worker_config = config.get("worker_config", {})
 
-    num_ctx_servers = 0 if "gen_only" in benchmark_mode else hardware.get("num_ctx_servers")
+    num_ctx_servers = (
+        0 if "gen_only_no_context" in benchmark_mode else hardware.get("num_ctx_servers")
+    )
     num_gen_servers = hardware.get("num_gen_servers")
     gpus_per_node = hardware.get("gpus_per_node")
 
@@ -332,16 +334,18 @@ def main():
     # Build worker env vars, add extra env vars for gen_only mode
     worker_env_vars = env_config["worker_env_var"]
     server_env_vars = env_config["server_env_var"]
-    if "gen_only" in benchmark_config["mode"]:
-        concurrency = benchmark_config["concurrency"]
-        worker_env_vars = (
-            "TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 "
-            f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
-            f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {worker_env_vars}"
-        )
+    # Handle gen only mode
+    if "gen_only_no_context" in benchmark_config.get("mode", ""):
+        worker_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {worker_env_vars}"
         server_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {server_env_vars}"
         script_prefix_lines.append("export TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1")
         srun_args_lines.append("--container-env=TRTLLM_DISAGG_BENCHMARK_GEN_ONLY")
+    elif "gen_only" in benchmark_config.get("mode", ""):
+        concurrency = benchmark_config.get("concurrency", 1)
+        worker_env_vars = (
+            f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
+            f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {worker_env_vars}"
+        )
 
     script_prefix_lines.extend(
         [
@@ -391,7 +395,6 @@ def main():
         f.write(f"{script_prefix}\n{srun_args}\n{draft_launch_content}")
 
     print(f"Launch script generated at: {args.launch_sh}")
-    print(f"Launch script:\n{script_prefix}\n{srun_args}\n{draft_launch_content}")
 
 
 if __name__ == "__main__":

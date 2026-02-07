@@ -30,7 +30,7 @@ for i in $(seq 0 $((numGenServers - 1))); do
     echo "Started gen server $i"
 done
 
-# Start ctx servers (skip if gen_only mode)
+# Start ctx servers (skip if gen_only_no_context mode)
 if [ "${TRTLLM_DISAGG_BENCHMARK_GEN_ONLY:-0}" != "1" ]; then
     echo "Starting ctx servers..."
     for i in $(seq 0 $((numCtxServers - 1))); do
@@ -45,7 +45,7 @@ if [ "${TRTLLM_DISAGG_BENCHMARK_GEN_ONLY:-0}" != "1" ]; then
         echo "Started ctx server $i"
     done
 else
-    echo "Skipping ctx servers (gen_only mode)"
+    echo "Skipping ctx servers (gen_only_no_context mode)"
 fi
 
 
