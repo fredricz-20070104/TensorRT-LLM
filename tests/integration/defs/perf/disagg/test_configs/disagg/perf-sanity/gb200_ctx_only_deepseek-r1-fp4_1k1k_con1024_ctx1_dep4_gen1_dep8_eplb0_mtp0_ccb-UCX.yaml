@@ -17,7 +17,7 @@ slurm:
   extra_args: --gres=gpu:4
   numa_bind: true
 benchmark:
-  mode: e2e
+  mode: ctx_only
   use_nv_sa_benchmark: true
   multi_round: 8
   benchmark_ratio: 0.8
@@ -29,7 +29,7 @@ benchmark:
 hardware:
   gpus_per_node: 4
   num_ctx_servers: 1
-  num_gen_servers: 1
+  num_gen_servers: 0
 environment:
   container_mount: <container_mount>
   container_image: <container_image>
