@@ -1032,8 +1032,6 @@ class PerfSanityTestConfig:
         benchmark_mode = benchmark.get("mode", "e2e")
         if "gen_only_no_context" in benchmark_mode:
             hardware["num_ctx_servers"] = 0
-        elif "ctx_only" in benchmark_mode:
-            hardware["num_gen_servers"] = 0
 
         worker_env_var = environment.get("worker_env_var", "")
         server_env_var = environment.get("server_env_var", "")

@@ -12,7 +12,7 @@ def get_hardware_config(config, benchmark_mode):
     num_ctx_servers = (
         0 if "gen_only_no_context" in benchmark_mode else hardware.get("num_ctx_servers")
     )
-    num_gen_servers = 0 if "ctx_only" in benchmark_mode else hardware.get("num_gen_servers")
+    num_gen_servers = hardware.get("num_gen_servers")
     gpus_per_node = hardware.get("gpus_per_node")
 
     # Get gpus_per_ctx_server and gpus_per_gen_server from worker_config's tensor_parallel_size
