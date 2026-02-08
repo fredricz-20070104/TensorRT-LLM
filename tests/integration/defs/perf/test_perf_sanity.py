@@ -1030,8 +1030,10 @@ class PerfSanityTestConfig:
         assert model_name, "model_name is required in metadata section"
 
         benchmark_mode = benchmark.get("mode", "e2e")
-        if "gen_only" in benchmark_mode:
+        if "gen_only_no_context" in benchmark_mode:
             hardware["num_ctx_servers"] = 0
+        elif "ctx_only" in benchmark_mode:
+            hardware["num_gen_servers"] = 0
 
         worker_env_var = environment.get("worker_env_var", "")
         server_env_var = environment.get("server_env_var", "")
@@ -1046,13 +1048,13 @@ class PerfSanityTestConfig:
         else:
             concurrency_values = [int(concurrency_str)]
 
-        # Gen only mode only runs max concurrency
+        # Gen only mode only runs the first concurrency
         if "gen_only" in benchmark_mode:
-            concurrency_values = [max(concurrency_values)]
+            concurrency_values = [concurrency_values[0]]
 
         # Create ctx server config
         ctx_server_config_data = {
-            "concurrency": max(concurrency_values),
+            "concurrency": concurrency_values[0],
             "name": config_file_base_name,
             "model_name": model_name,
             "gpus_per_node": gpus_per_node,
@@ -1062,7 +1064,7 @@ class PerfSanityTestConfig:
 
         # Create gen server config
         gen_server_config_data = {
-            "concurrency": max(concurrency_values),
+            "concurrency": concurrency_values[0],
             "name": config_file_base_name,
             "model_name": model_name,
             "gpus_per_node": gpus_per_node,

@@ -134,7 +134,9 @@ def get_hardware_config(config, is_disagg, test_name=None, benchmark_mode=None):
             if "gen_only_no_context" in (benchmark_mode or "")
             else hardware.get("num_ctx_servers")
         )
-        num_gen_servers = hardware.get("num_gen_servers")
+        num_gen_servers = (
+            0 if "ctx_only" in (benchmark_mode or "") else hardware.get("num_gen_servers")
+        )
 
         ctx_config = worker_config.get("ctx", {})
         gen_config = worker_config.get("gen", {})
