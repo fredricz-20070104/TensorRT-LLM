@@ -20,3 +20,8 @@ l0_gb200_multi_nodes_aggr_perf_sanity_node2_gpu8:
   # k2_thinking_fp4_2_nodes_grace_blackwell
   - perf/test_perf_sanity.py::test_e2e[aggr_upload-k2_thinking_fp4_2_nodes_grace_blackwell-k2_thinking_fp4_tep8_32k8k] TIMEOUT (90)
   - perf/test_perf_sanity.py::test_e2e[aggr_upload-k2_thinking_fp4_2_nodes_grace_blackwell-k2_thinking_fp4_dep8_32k8k] TIMEOUT (120)
+  # ctx only tests (disagg config)
+  # deepseek-r1-fp4
+  - perf/test_perf_sanity.py::test_e2e[aggr_upload-ctx_only-gb200_deepseek-r1-fp4_128k8k_con128_ctx1_pp8_gen1_dep16_eplb0_mtp2_ccb-UCX] TIMEOUT (120)
+  - perf/test_perf_sanity.py::test_e2e[aggr_upload-ctx_only-gb200_deepseek-r1-fp4_128k8k_con1_ctx1_pp8_gen1_tep8_eplb0_mtp3_ccb-UCX] TIMEOUT (120)
+  # - perf/test_perf_sanity.py::test_e2e[aggr_upload-ctx_only-gb200_deepseek-r1-fp4_128k8k_con64_ctx1_pp8_gen1_dep32_eplb0_mtp3_ccb-UCX] TIMEOUT (120)

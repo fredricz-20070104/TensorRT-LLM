@@ -885,7 +885,14 @@ class PerfSanityTestConfig:
         self.parse_test_case_name(test_case_name)
 
     def parse_test_case_name(self, test_case_name: str):
-        """Parse test case name into components."""
+        """Parse test case name into components.
+
+        Test name formats:
+        - Disagg e2e: disagg_upload-e2e-{config_base} (runtime=multi_node_disagg_server)
+        - Disagg gen_only: disagg_upload-gen_only-{config_base} (runtime=multi_node_disagg_server)
+        - ctx_only: aggr_upload-ctx_only-{config_base} (runtime=aggr_server, reads disagg config)
+        - Regular aggr: aggr_upload-{config}-{server_name} (runtime=aggr_server)
+        """
         self._test_param_labels = test_case_name
 
         # Extract configs from test param labels
@@ -906,31 +913,55 @@ class PerfSanityTestConfig:
             return "unsupported"
 
         assert len(labels) > 1, "perf_sanity test must have a config file!"
-        is_disagg = "disagg" in labels[0]
         self.upload_to_db = "upload" in labels[0]
         self.gpu_type = get_gpu_type()
+        self.benchmark_mode = None  # Can be: e2e, gen_only, ctx_only, or None (normal aggr)
 
-        if is_disagg:
-            # For disagg: disagg_upload-deepseek-r1-fp4_8k1k_ctx1_gen1_dep32_bs128_eplb0_mtp0_ccb-UCX
+        prefix = labels[0]
+        is_disagg_prefix = "disagg" in prefix
+        is_aggr_prefix = "aggr" in prefix
+
+        if is_disagg_prefix:
+            # Disagg format: disagg_upload-{e2e|gen_only}-{config_base}
+            assert len(labels) > 2, "Disagg test must have benchmark_mode and config!"
+            self.benchmark_mode = labels[1]  # e2e or gen_only
+            assert self.benchmark_mode in ("e2e", "gen_only"), (
+                f"Invalid benchmark_mode for disagg: {self.benchmark_mode}"
+            )
             self.runtime = "multi_node_disagg_server"
             self.config_dir = DISAGG_CONFIG_FOLDER
-            config_base = "-".join(labels[1:])
+            config_base = "-".join(labels[2:])
             self.config_file = (
                 f"{config_base}.yaml" if not config_base.endswith(".yaml") else config_base
             )
             self.select_pattern = None
+        elif is_aggr_prefix:
+            # Check if this is ctx_only (aggr_upload-ctx_only-{config_base})
+            if len(labels) > 2 and labels[1] == "ctx_only":
+                # ctx_only: aggr_upload-ctx_only-{config_base}
+                # Runs in aggregated mode but reads disagg config
+                self.benchmark_mode = "ctx_only"
+                self.runtime = "aggr_server"
+                self.config_dir = DISAGG_CONFIG_FOLDER
+                config_base = "-".join(labels[2:])
+                self.config_file = (
+                    f"{config_base}.yaml" if not config_base.endswith(".yaml") else config_base
+                )
+                self.select_pattern = None
+            else:
+                # Regular aggr: aggr_upload-config_yml or aggr_upload-config_yml-server_config_name
+                self.runtime = "aggr_server"
+                self.config_dir = AGGR_CONFIG_FOLDER
+                config_base = labels[1]
+                self.config_file = (
+                    f"{config_base}.yaml"
+                    if config_base and not config_base.endswith(".yaml")
+                    else config_base
+                )
+                # select_pattern is server config name (e.g., "r1_fp8_dep8_mtp1_1k1k")
+                self.select_pattern = "-".join(labels[2:]) if len(labels) > 2 else None
         else:
-            # For aggr: aggr_upload-config_yml or aggr_upload-config_yml-server_config_name
-            self.runtime = "aggr_server"
-            self.config_dir = AGGR_CONFIG_FOLDER
-            config_base = labels[1]
-            self.config_file = (
-                f"{config_base}.yaml"
-                if config_base and not config_base.endswith(".yaml")
-                else config_base
-            )
-            # select_pattern is server config name (e.g., "r1_fp8_dep8_mtp1_1k1k")
-            self.select_pattern = "-".join(labels[2:]) if len(labels) > 2 else None
+            raise ValueError(f"Invalid test name prefix: {prefix}")
 
         self.config_dir = os.getenv(
             "TRTLLM_CONFIG_FOLDER", os.path.join(get_llm_root(), self.config_dir)
@@ -941,13 +972,17 @@ class PerfSanityTestConfig:
         self.server_client_configs: Dict[int, List[ClientConfig]] = {}
 
     def parse_config_file(self):
-        """Parse config file based on runtime."""
+        """Parse config file based on runtime and benchmark_mode."""
         config_file_path = os.path.join(self.config_dir, self.config_file)
 
-        if self.runtime == "aggr_server":
-            self._parse_aggr_config_file(config_file_path)
-        elif self.runtime == "multi_node_disagg_server":
+        # benchmark_mode determines which parser to use:
+        # - e2e, gen_only, ctx_only: use _parse_disagg_config_file (reads disagg config)
+        # - None (normal aggr): use _parse_aggr_config_file
+        if self.benchmark_mode in ("e2e", "gen_only", "ctx_only"):
             self._parse_disagg_config_file(config_file_path, self.config_file)
+        else:
+            # Normal aggregated mode
+            self._parse_aggr_config_file(config_file_path)
 
     def _parse_aggr_config_file(self, config_file_path: str):
         """Parse YAML config file for aggregated server."""
@@ -1007,7 +1042,12 @@ class PerfSanityTestConfig:
         self.server_client_configs = server_client_configs
 
     def _parse_disagg_config_file(self, config_file_path: str, config_file: str):
-        """Parse YAML config file for disaggregated server."""
+        """Parse YAML config file for disaggregated server.
+
+        This method handles e2e, gen_only, and ctx_only modes.
+        For ctx_only: output is on par with _parse_aggr_config_file (single ServerConfig),
+                     OSL is set to 1, and cache_transceiver_config is ignored.
+        """
         disagg_serving_type = os.environ.get("DISAGG_SERVING_TYPE", "BENCHMARK")
 
         # Get config file base name (without extension)
@@ -1029,9 +1069,13 @@ class PerfSanityTestConfig:
         model_name = metadata.get("model_name", "")
         assert model_name, "model_name is required in metadata section"
 
-        benchmark_mode = benchmark.get("mode", "e2e")
-        if "gen_only_no_context" in benchmark_mode:
-            hardware["num_ctx_servers"] = 0
+        # Use self.benchmark_mode instead of reading from config file
+        benchmark_mode = self.benchmark_mode
+        if benchmark_mode == "gen_only":
+            # Check if it's gen_only_no_context from config
+            config_mode = benchmark.get("mode", "e2e")
+            if "gen_only_no_context" in config_mode:
+                hardware["num_ctx_servers"] = 0
 
         worker_env_var = environment.get("worker_env_var", "")
         server_env_var = environment.get("server_env_var", "")
@@ -1047,56 +1091,77 @@ class PerfSanityTestConfig:
             concurrency_values = [int(concurrency_str)]
 
         # Gen only mode only runs the first concurrency
-        if "gen_only" in benchmark_mode:
+        if benchmark_mode == "gen_only":
             concurrency_values = [concurrency_values[0]]
 
-        # Create ctx server config
-        ctx_server_config_data = {
-            "concurrency": concurrency_values[0],
-            "name": config_file_base_name,
-            "model_name": model_name,
-            "gpus_per_node": gpus_per_node,
-            "disagg_run_type": "ctx",
-            **worker_config.get("ctx", {}),
-        }
+        # Handle ctx_only mode specially - output should be on par with _parse_aggr_config_file
+        if benchmark_mode == "ctx_only":
+            # Get ctx worker config and modify it
+            ctx_config = dict(worker_config.get("ctx", {}))
+            # Ignore cache_transceiver_config for ctx_only
+            ctx_config.pop("cache_transceiver_config", None)
 
-        # Create gen server config
-        gen_server_config_data = {
-            "concurrency": concurrency_values[0],
-            "name": config_file_base_name,
-            "model_name": model_name,
-            "gpus_per_node": gpus_per_node,
-            "disagg_run_type": "gen",
-            **worker_config.get("gen", {}),
-        }
+            # Create server config for ctx_only (single ServerConfig, not tuple)
+            ctx_server_config_data = {
+                "concurrency": -1,  # Same as aggr
+                "name": f"{benchmark_mode}-{config_file_base_name}",
+                "model_name": model_name,
+                "gpus_per_node": gpus_per_node,
+                "disagg_run_type": "aggr",  # Run as aggr
+                **ctx_config,
+            }
 
-        ctx_server_config = ServerConfig(ctx_server_config_data, worker_env_var)
-        gen_server_config = ServerConfig(gen_server_config_data, worker_env_var)
+            ctx_server_config = ServerConfig(ctx_server_config_data, worker_env_var)
+            self.server_configs = [ctx_server_config]
+        else:
+            # For e2e and gen_only modes - create ctx and gen server configs
+            ctx_server_config_data = {
+                "concurrency": concurrency_values[0],
+                "name": f"{benchmark_mode}-{config_file_base_name}",
+                "model_name": model_name,
+                "gpus_per_node": gpus_per_node,
+                "disagg_run_type": "ctx",
+                **worker_config.get("ctx", {}),
+            }
 
-        # Create disagg config
-        disagg_config = DisaggConfig(
-            name=config_file_base_name,
-            disagg_serving_type=disagg_serving_type,
-            hostname=socket.gethostname(),
-            numa_bind=numa_bind,
-            timeout=timeout,
-            benchmark_mode=benchmark_mode,
-            model_name=model_name,
-            hardware=hardware,
-            server_env_var=server_env_var,
-        )
+            gen_server_config_data = {
+                "concurrency": concurrency_values[0],
+                "name": f"{benchmark_mode}-{config_file_base_name}",
+                "model_name": model_name,
+                "gpus_per_node": gpus_per_node,
+                "disagg_run_type": "gen",
+                **worker_config.get("gen", {}),
+            }
 
-        # server_configs is a list with one element (tuple of ctx, gen, disagg config)
-        self.server_configs = [(ctx_server_config, gen_server_config, disagg_config)]
+            ctx_server_config = ServerConfig(ctx_server_config_data, worker_env_var)
+            gen_server_config = ServerConfig(gen_server_config_data, worker_env_var)
+
+            disagg_config = DisaggConfig(
+                name=f"{benchmark_mode}-{config_file_base_name}",
+                disagg_serving_type=disagg_serving_type,
+                hostname=socket.gethostname(),
+                numa_bind=numa_bind,
+                timeout=timeout,
+                benchmark_mode=benchmark_mode,
+                model_name=model_name,
+                hardware=hardware,
+                server_env_var=server_env_var,
+            )
+
+            # server_configs is a list with one element (tuple of ctx, gen, disagg config)
+            self.server_configs = [(ctx_server_config, gen_server_config, disagg_config)]
 
         # Create client configs for each concurrency value
+        # OSL is set to 1 for ctx_only, otherwise use config value
+        osl = 1 if benchmark_mode == "ctx_only" else benchmark.get("output_length", 1024)
+
         client_configs = []
         for concurrency in concurrency_values:
             client_config_data = {
                 "concurrency": concurrency,
                 "iterations": benchmark.get("multi_round", 1),
                 "isl": benchmark.get("input_length", 1024),
-                "osl": benchmark.get("output_length", 1024),
+                "osl": osl,
                 "random_range_ratio": benchmark.get("benchmark_ratio", 0.0),
                 "backend": "openai",
                 "use_chat_template": False,
@@ -1113,13 +1178,14 @@ class PerfSanityTestConfig:
         self.server_client_configs = {0: client_configs}
 
     def get_commands(self):
-        """Get commands based on runtime."""
+        """Get commands based on runtime and benchmark_mode."""
         self.perf_sanity_output_dir = os.path.join(self._output_dir, self._test_param_labels)
         os.makedirs(self.perf_sanity_output_dir, exist_ok=True)
 
+        # ctx_only runs in aggregated mode (uses _get_aggr_commands)
         if self.runtime == "aggr_server":
             return self._get_aggr_commands(self.perf_sanity_output_dir)
-        elif self.runtime == "multi_node_disagg_server":
+        else:
             return self._get_disagg_commands(self.perf_sanity_output_dir)
 
     def _get_aggr_commands(self, output_dir: str):
@@ -1551,7 +1617,13 @@ def get_aggr_test_cases() -> List[str]:
 
 
 def get_disagg_test_cases() -> List[str]:
-    """Generate disagg test cases."""
+    """Generate disagg test cases with benchmark modes.
+
+    New format:
+    - Disagg e2e: {test_type}-e2e-{config_base}
+    - Disagg gen_only: {test_type}-gen_only-{config_base}
+    - ctx_only: aggr_{upload}-ctx_only-{config_base} (uses aggr prefix)
+    """
     llm_root = get_llm_root()
     disagg_config_dir = os.path.join(llm_root, DISAGG_CONFIG_FOLDER)
     yaml_files = glob.glob(os.path.join(disagg_config_dir, "*.yaml"))
@@ -1559,8 +1631,14 @@ def get_disagg_test_cases() -> List[str]:
 
     test_cases = []
     for config_yml in basenames:
+        # Disagg e2e and gen_only test cases
         for test_type in DISAGG_TEST_TYPES:
-            test_cases.append(f"{test_type}-{config_yml}")
+            test_cases.append(f"{test_type}-e2e-{config_yml}")
+            test_cases.append(f"{test_type}-gen_only-{config_yml}")
+
+        # ctx_only test cases (uses aggr prefix)
+        for test_type in AGG_TEST_TYPES:
+            test_cases.append(f"{test_type}-ctx_only-{config_yml}")
 
     return test_cases
 

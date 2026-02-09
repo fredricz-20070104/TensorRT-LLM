@@ -10,10 +10,11 @@ chmod +x $runScript
 
 # Run aggregated test
 echo "Starting aggregated test..."
+world_size=$((totalNodes * gpusPerNodePerServer))
 srun "${srunArgs[@]}" --kill-on-bad-exit=1 \
     -N $totalNodes \
-    --ntasks=$totalGpus \
-    --ntasks-per-node=$gpusPerNode \
+    --ntasks=$world_size \
+    --ntasks-per-node=$gpusPerNodePerServer \
     $runScript &> $jobWorkspace/run.log
 
 echo "Aggregated test completed successfully"

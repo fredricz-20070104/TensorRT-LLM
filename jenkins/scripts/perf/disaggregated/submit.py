@@ -365,8 +365,8 @@ def main():
             f"export gpusPerGenServer={hardware_config['gpus_per_gen_server']}",
             f"export nodesPerCtxServer={hardware_config['nodes_per_ctx_server']}",
             f"export nodesPerGenServer={hardware_config['nodes_per_gen_server']}",
-            f"export gpusPerfNodePerfCtxServer={hardware_config['gpus_per_node_per_ctx_server']}",
-            f"export gpusPerfNodePerfGenServer={hardware_config['gpus_per_node_per_gen_server']}",
+            f"export gpusPerNodePerCtxServer={hardware_config['gpus_per_node_per_ctx_server']}",
+            f"export gpusPerNodePerGenServer={hardware_config['gpus_per_node_per_gen_server']}",
             f"export totalNodes={hardware_config['total_nodes']}",
             f"export totalGpus={hardware_config['total_gpus']}",
         ]

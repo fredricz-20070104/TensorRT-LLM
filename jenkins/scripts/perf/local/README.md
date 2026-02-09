@@ -20,8 +20,7 @@
 Using `--test-list`:
 
 ```bash
-python3 submit.py --mode aggregated \
-    --test-list "perf/test_perf_sanity.py::test_e2e[aggr-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_tep8_mtp3]" \
+python3 submit.py --test-list "perf/test_perf_sanity.py::test_e2e[aggr-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_tep8_mtp3]" \
     --partition batch \
     --account coreai_comparch_trtllm \
     --job-name aggr_test \
@@ -33,8 +32,7 @@ python3 submit.py --mode aggregated \
 Using `--config-file` and `--test-name`:
 
 ```bash
-python3 submit.py --mode aggregated \
-    --config-file /lustre/fsw/portfolios/coreai/users/chenfeiz/repo/trtllm-1/tests/scripts/perf-sanity/deepseek_r1_fp4_v2_2_nodes_grace_blackwell.yaml \
+python3 submit.py --config-file /lustre/fsw/portfolios/coreai/users/chenfeiz/repo/trtllm-1/tests/scripts/perf-sanity/deepseek_r1_fp4_v2_2_nodes_grace_blackwell.yaml \
     --test-name r1_fp4_v2_tep8_mtp3 \
     --partition batch \
     --account coreai_comparch_trtllm \
@@ -49,8 +47,7 @@ python3 submit.py --mode aggregated \
 Using `--test-list`:
 
 ```bash
-python3 submit.py --mode disaggregated \
-    --test-list "perf/test_perf_sanity.py::test_e2e[disagg-gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1_ccb-UCX]" \
+python3 submit.py --test-list "perf/test_perf_sanity.py::test_e2e[disagg-gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1_ccb-UCX]" \
     --partition batch \
     --account coreai_comparch_trtllm \
     --job-name disagg_test \
@@ -62,8 +59,8 @@ python3 submit.py --mode disaggregated \
 Using `--config-file`:
 
 ```bash
-python3 submit.py --mode disaggregated \
-    --config-file /lustre/fsw/portfolios/coreai/users/chenfeiz/repo/trtllm-1/tests/integration/defs/perf/disagg/test_configs/disagg/perf-sanity/gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1_ccb-UCX.yaml \
+python3 submit.py --config-file /lustre/fsw/portfolios/coreai/users/chenfeiz/repo/trtllm-1/tests/integration/defs/perf/disagg/test_configs/disagg/perf-sanity/gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1_ccb-UCX.yaml \
+    --benchmark-mode gen_only \
     --partition batch \
     --account coreai_comparch_trtllm \
     --job-name disagg_test \

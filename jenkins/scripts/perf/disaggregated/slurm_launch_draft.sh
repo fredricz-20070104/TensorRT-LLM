@@ -19,13 +19,13 @@ echo "Installation completed on all nodes"
 # Start gen servers
 echo "Starting gen servers..."
 for i in $(seq 0 $((numGenServers - 1))); do
-    gen_world_size=$((nodesPerGenServer * gpusPerfNodePerfGenServer))
+    gen_world_size=$((nodesPerGenServer * gpusPerNodePerGenServer))
     export DISAGG_SERVING_TYPE="GEN_$i"
     export pytestCommand="$pytestCommandWorker"
     srun "${srunArgs[@]}" --kill-on-bad-exit=1 \
         -N $nodesPerGenServer \
         --ntasks=$gen_world_size \
-        --ntasks-per-node=$gpusPerfNodePerfGenServer \
+        --ntasks-per-node=$gpusPerNodePerGenServer \
         $runScript &> $jobWorkspace/gen_server_$i.log &
     echo "Started gen server $i"
 done
@@ -34,13 +34,13 @@ done
 if [ "${TRTLLM_DISAGG_BENCHMARK_GEN_ONLY:-0}" != "1" ]; then
     echo "Starting ctx servers..."
     for i in $(seq 0 $((numCtxServers - 1))); do
-        ctx_world_size=$((nodesPerCtxServer * gpusPerfNodePerfCtxServer))
+        ctx_world_size=$((nodesPerCtxServer * gpusPerNodePerCtxServer))
         export DISAGG_SERVING_TYPE="CTX_$i"
         export pytestCommand="$pytestCommandWorker"
         srun "${srunArgs[@]}" --kill-on-bad-exit=1 \
             -N $nodesPerCtxServer \
         --ntasks=$ctx_world_size \
-        --ntasks-per-node=$gpusPerfNodePerfCtxServer \
+        --ntasks-per-node=$gpusPerNodePerCtxServer \
             $runScript &> $jobWorkspace/ctx_server_$i.log &
         echo "Started ctx server $i"
     done

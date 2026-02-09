@@ -13,16 +13,29 @@ def get_llm_src_default():
     return os.path.normpath(os.path.join(script_dir, "..", "..", "..", ".."))
 
 
-def parse_test_string(test_string, llm_src, is_disagg):
-    """Parse test string to get config yaml path, config base name, and test name.
+def detect_config_type(config):
+    """Detect if config is disagg (has worker_config) or aggr (has server_configs)."""
+    if "worker_config" in config:
+        return "disagg"
+    elif "server_configs" in config:
+        return "aggr"
+    else:
+        raise ValueError("Cannot detect config type: missing worker_config or server_configs")
 
-    Examples:
-        perf/test_perf_sanity.py::test_e2e[aggr-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_tep8_mtp3]
-        perf/test_perf_sanity.py::test_e2e[disagg_upload-gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1
-            _ccb-UCX] TIMEOUT (120)
 
-    We ignore "TIMEOUT (xxx)" suffix if present.
-    Note: aggr_upload is treated as aggr, disagg_upload is treated as disagg.
+def parse_test_string(test_string, llm_src):
+    """Parse test string to get config yaml path, config base name, test name, and benchmark_mode.
+
+    Test formats:
+    - Disagg e2e: disagg_upload-e2e-{config_base}
+    - Disagg gen_only: disagg_upload-gen_only-{config_base}
+    - ctx_only: aggr_upload-ctx_only-{config_base} (runs aggr mode but reads disagg config)
+    - Regular aggr: aggr_upload-{config}-{server_name}
+
+    Returns:
+        tuple: (config_yaml_path, config_base_name, test_name, runtime_mode, benchmark_mode)
+            - runtime_mode: "aggregated" or "disaggregated"
+            - benchmark_mode: "e2e", "gen_only", "ctx_only", or None (for normal aggr)
     """
     # Remove TIMEOUT suffix if present
     test_string = re.sub(r"\s+TIMEOUT\s*\(\d+\)\s*$", "", test_string.strip())
@@ -43,14 +56,21 @@ def parse_test_string(test_string, llm_src, is_disagg):
     is_aggr_prefix = prefix in ("aggr", "aggr_upload")
     is_disagg_prefix = prefix in ("disagg", "disagg_upload")
 
-    if is_disagg:
-        # For disagg: disagg-gb200-deepseek-r1-fp4_1k1k_ctx1_dep4_gen1_dep4_eplb0_mtp1_ccb-UCX
-        if not is_disagg_prefix:
+    if is_disagg_prefix:
+        # Disagg format: disagg_upload-{e2e|gen_only}-{config_base}
+        if len(parts) < 3:
             raise ValueError(
-                f"Invalid test name format. Expected format: disagg-config_name or "
-                f"disagg_upload-config_name, got: {bracket_content}"
+                f"Invalid disagg test format. Expected: disagg_upload-{{mode}}-{{config}}, "
+                f"got: {bracket_content}"
             )
-        config_base_name = "-".join(parts[1:])
+        benchmark_mode = parts[1]  # e2e or gen_only
+        if benchmark_mode not in ("e2e", "gen_only"):
+            raise ValueError(
+                f"Invalid benchmark_mode for disagg: {benchmark_mode}. "
+                f"Expected 'e2e' or 'gen_only'."
+            )
+        runtime_mode = "disaggregated"
+        config_base_name = "-".join(parts[2:])
         config_yaml_path = os.path.join(
             llm_src,
             "tests",
@@ -64,30 +84,50 @@ def parse_test_string(test_string, llm_src, is_disagg):
             f"{config_base_name}.yaml",
         )
         test_name = None
-    else:
-        # For aggr: aggr-config_yml-server_config_name
-        if not is_aggr_prefix:
-            raise ValueError(
-                f"Invalid test name format. Expected format: aggr-config_name or "
-                f"aggr_upload-config_name, got: {bracket_content}"
+    elif is_aggr_prefix:
+        # Check if this is ctx_only (aggr_upload-ctx_only-{config_base})
+        if len(parts) > 2 and parts[1] == "ctx_only":
+            # ctx_only: aggr_upload-ctx_only-{config_base}
+            # Runs in aggregated mode but reads disagg config
+            benchmark_mode = "ctx_only"
+            runtime_mode = "aggregated"
+            config_base_name = "-".join(parts[2:])
+            config_yaml_path = os.path.join(
+                llm_src,
+                "tests",
+                "integration",
+                "defs",
+                "perf",
+                "disagg",
+                "test_configs",
+                "disagg",
+                "perf-sanity",
+                f"{config_base_name}.yaml",
             )
-        config_base_name = parts[1]
-        config_yaml_path = os.path.join(
-            llm_src,
-            "tests",
-            "scripts",
-            "perf-sanity",
-            f"{config_base_name}.yaml",
-        )
-        # test_name is server config name (e.g., "r1_fp8_dep8_mtp1_1k1k")
-        test_name = "-".join(parts[2:]) if len(parts) > 2 else None
+            test_name = None
+        else:
+            # Regular aggr: aggr_upload-config_yml or aggr_upload-config_yml-server_config_name
+            benchmark_mode = None
+            runtime_mode = "aggregated"
+            config_base_name = parts[1]
+            config_yaml_path = os.path.join(
+                llm_src,
+                "tests",
+                "scripts",
+                "perf-sanity",
+                f"{config_base_name}.yaml",
+            )
+            # test_name is server config name (e.g., "r1_fp8_dep8_mtp1_1k1k")
+            test_name = "-".join(parts[2:]) if len(parts) > 2 else None
+    else:
+        raise ValueError(f"Invalid test name prefix: {prefix}")
 
     if not os.path.exists(config_yaml_path):
         raise FileNotFoundError(f"Config file not found: {config_yaml_path}")
-    return config_yaml_path, config_base_name, test_name
+    return config_yaml_path, config_base_name, test_name, runtime_mode, benchmark_mode
 
 
-def get_hardware_config(config, is_disagg, test_name=None, benchmark_mode=None):
+def get_hardware_config(config, runtime_mode, benchmark_mode, test_name=None):
     """Get hardware config based on mode."""
     hardware = config.get("hardware", {})
     gpus_per_node = hardware.get("gpus_per_node")
@@ -95,8 +135,31 @@ def get_hardware_config(config, is_disagg, test_name=None, benchmark_mode=None):
     if gpus_per_node is None:
         raise ValueError("Missing gpus_per_node in hardware configuration")
 
-    if not is_disagg:
-        # Aggregated mode
+    # ctx_only mode reads disagg config but runs in aggregated mode
+    if benchmark_mode == "ctx_only":
+        # Use ctx worker config to determine hardware
+        worker_config = config.get("worker_config", {})
+        ctx_config = worker_config.get("ctx", {})
+        ctx_tp = ctx_config.get("tensor_parallel_size", 1)
+        ctx_pp = ctx_config.get("pipeline_parallel_size", 1)
+        ctx_cp = ctx_config.get("context_parallel_size", 1)
+        gpus_per_server = ctx_tp * ctx_pp * ctx_cp
+
+        nodes_per_server = (gpus_per_server + gpus_per_node - 1) // gpus_per_node
+        total_nodes = nodes_per_server
+        total_gpus = total_nodes * gpus_per_node
+        gpus_per_node_per_server = min(gpus_per_server, gpus_per_node)
+
+        return {
+            "gpus_per_node": gpus_per_node,
+            "gpus_per_server": gpus_per_server,
+            "nodes_per_server": nodes_per_server,
+            "gpus_per_node_per_server": gpus_per_node_per_server,
+            "total_nodes": total_nodes,
+            "total_gpus": total_gpus,
+        }
+    elif runtime_mode == "aggregated":
+        # Normal aggregated mode
         server_configs = config.get("server_configs", [])
         server_config = None
         for sc in server_configs:
@@ -126,12 +189,13 @@ def get_hardware_config(config, is_disagg, test_name=None, benchmark_mode=None):
             "total_gpus": total_gpus,
         }
     else:
-        # Disaggregated mode
+        # Disaggregated mode (e2e or gen_only)
         worker_config = config.get("worker_config", {})
 
         num_ctx_servers = (
             0
-            if "gen_only_no_context" in (benchmark_mode or "")
+            if benchmark_mode == "gen_only"
+            and "gen_only_no_context" in config.get("benchmark", {}).get("mode", "")
             else hardware.get("num_ctx_servers")
         )
         num_gen_servers = hardware.get("num_gen_servers")
@@ -181,9 +245,9 @@ def get_hardware_config(config, is_disagg, test_name=None, benchmark_mode=None):
         }
 
 
-def get_env_config(config, is_disagg):
+def get_env_config(config, runtime_mode):
     """Get env config based on mode."""
-    if not is_disagg:
+    if runtime_mode == "aggregated":
         return {}
     env = config.get("environment", {})
     return {
@@ -193,22 +257,21 @@ def get_env_config(config, is_disagg):
     }
 
 
-def get_benchmark_config(config, is_disagg):
+def get_benchmark_config(config, benchmark_mode):
     """Get benchmark config based on mode."""
-    if not is_disagg:
+    if benchmark_mode is None:
         return {}
     benchmark = config.get("benchmark", {})
-    mode = benchmark.get("mode", "e2e")
     concurrency_str = benchmark.get("concurrency_list", "1")
     concurrency = int(concurrency_str) if isinstance(concurrency_str, str) else concurrency_str
 
     return {
-        "mode": mode,
+        "mode": benchmark_mode,
         "concurrency": concurrency,
     }
 
 
-def generate_sbatch_params(args, hardware_config, work_dir, mode):
+def generate_sbatch_params(args, hardware_config, work_dir):
     """Generate #SBATCH parameters."""
     total_nodes = hardware_config["total_nodes"]
     gpus_per_node = hardware_config["gpus_per_node"]
@@ -230,9 +293,9 @@ def generate_sbatch_params(args, hardware_config, work_dir, mode):
     return lines
 
 
-def generate_srun_args(args, mode, timestamp):
+def generate_srun_args(args, runtime_mode, timestamp):
     """Generate srun arguments."""
-    is_disagg = mode == "disaggregated"
+    is_disagg = runtime_mode == "disaggregated"
     container_name = f"{'disagg' if is_disagg else 'aggr'}_test-{timestamp}"
 
     lines = [
@@ -256,13 +319,23 @@ def generate_srun_args(args, mode, timestamp):
     return lines
 
 
-def generate_pytest_command(llm_src, work_dir, config_file_base_name, test_name, mode):
+def generate_pytest_command(
+    llm_src, work_dir, config_file_base_name, test_name, runtime_mode, benchmark_mode
+):
     """Generate pytest command and test list."""
-    is_disagg = mode == "disaggregated"
-
-    if is_disagg:
-        test_list_content = f"perf/test_perf_sanity.py::test_e2e[disagg-{config_file_base_name}]"
+    # Generate test list content based on runtime_mode and benchmark_mode
+    if runtime_mode == "disaggregated":
+        # disagg_upload-{e2e|gen_only}-{config_base}
+        test_list_content = (
+            f"perf/test_perf_sanity.py::test_e2e[disagg-{benchmark_mode}-{config_file_base_name}]"
+        )
+    elif benchmark_mode == "ctx_only":
+        # aggr_upload-ctx_only-{config_base}
+        test_list_content = (
+            f"perf/test_perf_sanity.py::test_e2e[aggr-ctx_only-{config_file_base_name}]"
+        )
     else:
+        # Normal aggr: aggr-{config}-{test_name}
         test_list_content = (
             f"perf/test_perf_sanity.py::test_e2e[aggr-{config_file_base_name}-{test_name}]"
         )
@@ -290,12 +363,6 @@ def main():
         description="Generate SLURM launch script for local runs (aggregated or disaggregated)"
     )
     parser.add_argument(
-        "--mode",
-        required=True,
-        choices=["aggregated", "disaggregated"],
-        help="Mode: aggregated or disaggregated",
-    )
-    parser.add_argument(
         "--test-list",
         default="",
         help="Test string, e.g., 'perf/test_perf_sanity.py::test_e2e[aggr-config-test_name]'. "
@@ -305,7 +372,13 @@ def main():
     parser.add_argument(
         "--test-name",
         default="",
-        help="Test name (only used for aggregated mode when --config-file is provided)",
+        help="Test name (only used for normal aggregated mode when --config-file is provided)",
+    )
+    parser.add_argument(
+        "--benchmark-mode",
+        default="",
+        choices=["", "e2e", "gen_only", "ctx_only"],
+        help="Benchmark mode for disagg config (when --config-file is provided)",
     )
     parser.add_argument("--partition", required=True, help="SLURM partition")
     parser.add_argument("--time", default="02:00:00", help="SLURM time limit")
@@ -333,28 +406,45 @@ def main():
     # Determine llm_src
     llm_src = args.llm_src if args.llm_src else get_llm_src_default()
     llm_src = os.path.abspath(llm_src)
-    is_disagg = args.mode == "disaggregated"
 
-    # Determine config_yaml, config_file_base_name, and test_name
+    # Determine config_yaml, config_file_base_name, test_name, runtime_mode, and benchmark_mode
     # --test-list takes precedence over --config-file
     if args.test_list:
-        config_yaml, config_file_base_name, test_name = parse_test_string(
-            args.test_list, llm_src, is_disagg
+        config_yaml, config_file_base_name, test_name, runtime_mode, benchmark_mode = (
+            parse_test_string(args.test_list, llm_src)
         )
     elif args.config_file:
         config_yaml = args.config_file
         config_file_base_name = os.path.splitext(os.path.basename(config_yaml))[0]
-        test_name = args.test_name if not is_disagg else None
+
+        # Load config to detect type
+        with open(config_yaml, "r") as f:
+            config = yaml.safe_load(f)
+
+        config_type = detect_config_type(config)
+
+        if config_type == "disagg":
+            # Disagg config - need benchmark_mode
+            benchmark_mode = args.benchmark_mode if args.benchmark_mode else "e2e"
+            if benchmark_mode == "ctx_only":
+                runtime_mode = "aggregated"
+            else:
+                runtime_mode = "disaggregated"
+            test_name = None
+        else:
+            # Aggr config
+            runtime_mode = "aggregated"
+            benchmark_mode = None
+            test_name = args.test_name
+            if not test_name:
+                raise ValueError("--test-name is required for aggregated config")
     else:
         raise ValueError("Either --test-list or --config-file must be provided")
 
-    # Validate test_name for aggregated mode
-    if not is_disagg and not test_name:
-        raise ValueError("--test-name is required for aggregated mode when --config-file is used")
-
-    # Load config
-    with open(config_yaml, "r") as f:
-        config = yaml.safe_load(f)
+    # Load config if not already loaded
+    if not args.config_file:
+        with open(config_yaml, "r") as f:
+            config = yaml.safe_load(f)
 
     # Create timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -384,29 +474,29 @@ def main():
             "jenkins",
             "scripts",
             "perf",
-            "disaggregated" if is_disagg else "aggregated",
+            "disaggregated" if runtime_mode == "disaggregated" else "aggregated",
             "slurm_launch_draft.sh",
         )
 
     # Get configs based on mode
-    env_config = get_env_config(config, is_disagg)
-    benchmark_config = get_benchmark_config(config, is_disagg)
+    env_config = get_env_config(config, runtime_mode)
+    bm_config = get_benchmark_config(config, benchmark_mode)
     hardware_config = get_hardware_config(
         config,
-        is_disagg,
+        runtime_mode,
+        benchmark_mode,
         test_name=test_name,
-        benchmark_mode=benchmark_config.get("mode", "e2e") if is_disagg else None,
     )
 
     # Generate sbatch params
-    sbatch_lines = generate_sbatch_params(args, hardware_config, work_dir, args.mode)
+    sbatch_lines = generate_sbatch_params(args, hardware_config, work_dir)
 
     # Generate srun args
-    srun_args_lines = generate_srun_args(args, args.mode, timestamp)
+    srun_args_lines = generate_srun_args(args, runtime_mode, timestamp)
 
     # Generate pytest command
     pytest_command, test_list_content, test_list_path = generate_pytest_command(
-        llm_src, work_dir, config_file_base_name, test_name, args.mode
+        llm_src, work_dir, config_file_base_name, test_name, runtime_mode, benchmark_mode
     )
 
     # Write test list file
@@ -436,19 +526,19 @@ def main():
     )
     llmapi_launch = f"{llm_src}/tensorrt_llm/llmapi/trtllm-llmapi-launch"
 
-    if is_disagg:
+    if runtime_mode == "disaggregated":
         # Build worker env vars
         worker_env_vars = env_config.get("worker_env_var", "")
         server_env_vars = env_config.get("server_env_var", "")
         benchmark_env_var = env_config.get("benchmark_env_var", "")
         # Handle gen only mode
-        if "gen_only_no_context" in benchmark_config.get("mode", ""):
+        if "gen_only_no_context" in bm_config.get("mode", ""):
             worker_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {worker_env_vars}"
             server_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {server_env_vars}"
             script_prefix_lines.append("export TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1")
             srun_args_lines.append("--container-env=TRTLLM_DISAGG_BENCHMARK_GEN_ONLY")
-        elif "gen_only" in benchmark_config.get("mode", ""):
-            concurrency = benchmark_config.get("concurrency", 1)
+        elif "gen_only" in bm_config.get("mode", ""):
+            concurrency = bm_config.get("concurrency", 1)
             worker_env_vars = (
                 f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
                 f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {worker_env_vars}"
@@ -470,8 +560,8 @@ def main():
                 f"export gpusPerGenServer={hardware_config.get('gpus_per_gen_server', '')}",
                 f"export nodesPerCtxServer={hardware_config.get('nodes_per_ctx_server', '')}",
                 f"export nodesPerGenServer={hardware_config.get('nodes_per_gen_server', '')}",
-                f"export gpusPerfNodePerfCtxServer={hardware_config.get('gpus_per_node_per_ctx_server', '')}",
-                f"export gpusPerfNodePerfGenServer={hardware_config.get('gpus_per_node_per_gen_server', '')}",
+                f"export gpusPerNodePerCtxServer={hardware_config.get('gpus_per_node_per_ctx_server', '')}",
+                f"export gpusPerNodePerGenServer={hardware_config.get('gpus_per_node_per_gen_server', '')}",
                 f"export totalNodes={hardware_config.get('total_nodes', '')}",
                 f"export totalGpus={hardware_config.get('total_gpus', '')}",
             ]
@@ -485,11 +575,12 @@ def main():
             ]
         )
     else:
-        # Aggregated mode - only export pytestCommand
+        # Aggregated mode (including ctx_only)
         script_prefix_lines.extend(
             [
                 f'export pytestCommand="{pytest_common_vars} {llmapi_launch} {pytest_command}"',
                 f"export gpusPerNode={hardware_config.get('gpus_per_node', '')}",
+                f"export gpusPerNodePerServer={hardware_config.get('gpus_per_node_per_server', '')}",
                 f"export totalNodes={hardware_config.get('total_nodes', '')}",
                 f"export totalGpus={hardware_config.get('total_gpus', '')}",
             ]
