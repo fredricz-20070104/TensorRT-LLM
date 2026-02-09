@@ -609,8 +609,11 @@ def main():
 
     # Make scripts executable
     os.chmod(launch_sh, 0o755)
-    os.chmod(run_sh, 0o755)
-    os.chmod(install_sh, 0o755)
+    for script_path in [run_sh, install_sh]:
+        if os.path.exists(script_path):
+            os.chmod(script_path, 0o755)
+        else:
+            print(f"Warning: Script not found, skipping chmod: {script_path}")
 
     print(f"\nLaunch script generated at: {launch_sh}")
     print("\nTo submit the job, run:")

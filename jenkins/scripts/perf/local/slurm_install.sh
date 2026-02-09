@@ -38,7 +38,7 @@ slurm_build_wheel() {
 
 slurm_install_setup() {
     lock_file="install_lock_job_${SLURM_JOB_ID:-local}_node_${SLURM_NODEID:-0}.lock"
-    if [ $SLURM_LOCALID -eq 0 ]; then
+    if [ "${SLURM_LOCALID:-0}" -eq 0 ]; then
         cd /tmp
         if [ -f "$lock_file" ]; then
             rm -f "$lock_file"
