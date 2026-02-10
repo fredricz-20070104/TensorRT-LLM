@@ -21,6 +21,7 @@ image=$(echo $image | sed 's|urm.nvidia.com/|urm.nvidia.com#|g')
 - `--install-sh`: Path to slurm_install.sh script.
 - `--llm-src`: Path to LLM source code.
 - `--build-wheel`: Add this flag to build the wheel before running tests.
+- `--install-mode`: Installation mode - `source` (pip install -e ., default) or `wheel` (pip install *.whl).
 
 ## OCI
 
