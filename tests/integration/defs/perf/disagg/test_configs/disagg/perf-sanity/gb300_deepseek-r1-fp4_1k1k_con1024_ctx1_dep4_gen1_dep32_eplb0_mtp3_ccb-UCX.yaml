@@ -3,6 +3,7 @@ metadata:
   precision: fp4
   model_dir_name: DeepSeek-R1-0528-FP4-v2
   supported_gpus:
+  - GB200
   - GB300
   script_file: disaggr_torch.slurm
   benchmark_type: 1k1k
