@@ -1,7 +1,6 @@
 metadata:
   model_name: deepseek_r1_0528_fp4_v2
   supported_gpus:
-  - GB200
   - GB300
 hardware:
   gpus_per_node: 4
