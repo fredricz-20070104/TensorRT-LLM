@@ -4,7 +4,8 @@ import os
 
 import yaml
 
-DISAGG_CONFIG_FOLDER = "tests/integration/defs/perf/disagg/test_configs/disagg/perf-sanity"
+AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
+DISAGG_CONFIG_FOLDER = os.environ.get("DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated")
 
 
 def get_hardware_config(config, benchmark_mode):
@@ -341,30 +342,51 @@ def main():
         benchmark_pytest_command,
     ) = get_pytest_commands(script_prefix_lines)
 
-    # Build worker env vars, add extra env vars for gen_only mode
-    worker_env_vars = env_config["worker_env_var"]
+    # Build worker env vars (split into ctx and gen for role-specific settings)
+    base_worker_env_vars = (
+        f"FLASHINFER_JIT_DIR=/tmp/flashinfer_jit_cache_\\${{SLURM_LOCALID}} "
+        f"HF_HOME=/tmp/hf_home "
+        f"{env_config['worker_env_var']}"
+    )
+    ctx_worker_env_vars = base_worker_env_vars
+    gen_worker_env_vars = base_worker_env_vars
     server_env_vars = env_config["server_env_var"]
     # Handle gen only mode
     if "gen_only_no_context" in benchmark_mode:
-        worker_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {worker_env_vars}"
+        gen_worker_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {gen_worker_env_vars}"
         server_env_vars = f"TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1 {server_env_vars}"
         script_prefix_lines.append("export TRTLLM_DISAGG_BENCHMARK_GEN_ONLY=1")
         srun_args_lines.append("--container-env=TRTLLM_DISAGG_BENCHMARK_GEN_ONLY")
     elif "gen_only" in benchmark_mode:
         concurrency = benchmark_config.get("concurrency", 1)
-        worker_env_vars = (
+        ctx_worker_env_vars = (
             f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
-            f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {worker_env_vars}"
+            f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {ctx_worker_env_vars}"
         )
+        gen_worker_env_vars = (
+            f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
+            f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {gen_worker_env_vars}"
+        )
+
+    pytest_common_vars = (
+        f"AGG_CONFIG_FOLDER='{AGG_CONFIG_FOLDER}' "
+        f"DISAGG_CONFIG_FOLDER='{DISAGG_CONFIG_FOLDER}' "
+    )
 
     script_prefix_lines.extend(
         [
             worker_pytest_command,
             disagg_server_pytest_command,
             benchmark_pytest_command,
-            f'export pytestCommandWorker="unset UCX_TLS && {worker_env_vars} $partialPytestCommandWorker"',
-            f'export pytestCommandDisaggServer="{server_env_vars} $partialPytestCommandDisaggServer"',
-            f'export pytestCommandBenchmark="{env_config["benchmark_env_var"]} $partialPytestCommandBenchmark"',
+            f'export PYTEST_COMMON_VARS="{pytest_common_vars}"',
+            f'export CTX_WORKER_ENV_VARS="{ctx_worker_env_vars}"',
+            f'export GEN_WORKER_ENV_VARS="{gen_worker_env_vars}"',
+            f'export SERVER_ENV_VARS="{server_env_vars}"',
+            f'export BENCHMARK_ENV_VARS="{env_config["benchmark_env_var"]}"',
+            'export pytestCommandCTXWorker="unset UCX_TLS && $CTX_WORKER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
+            'export pytestCommandGENWorker="unset UCX_TLS && $GEN_WORKER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
+            'export pytestCommandDisaggServer="$SERVER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandDisaggServer"',
+            'export pytestCommandBenchmark="$BENCHMARK_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandBenchmark"',
             f"export runScript={args.run_sh}",
             f"export installScript={install_script}",
             f"export configYamlPath={config_yaml}",

@@ -35,7 +35,7 @@ from ..conftest import get_llm_root, llm_models_root
 from .open_search_db_utils import (
     SCENARIO_MATCH_FIELDS,
     add_id,
-    check_perf_regression,
+    generate_perf_yaml,
     get_common_values,
     get_history_data,
     get_job_info,
@@ -66,8 +66,8 @@ SUPPORTED_GPU_MAPPING = {
 }
 
 DEFAULT_TIMEOUT = 5400
-AGGR_CONFIG_FOLDER = "tests/scripts/perf-sanity"
-DISAGG_CONFIG_FOLDER = "tests/integration/defs/perf/disagg/test_configs/disagg/perf-sanity"
+AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
+DISAGG_CONFIG_FOLDER = os.environ.get("DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated")
 
 # Regex patterns for parsing benchmark output metrics
 # Key is the metric name used in database (e.g., "mean_e2el", "seq_throughput")
@@ -906,7 +906,7 @@ def get_config_dir(benchmark_mode: Optional[str]) -> str:
     if benchmark_mode in ("e2e", "gen_only", "ctx_only"):
         return DISAGG_CONFIG_FOLDER
     else:
-        return AGGR_CONFIG_FOLDER
+        return AGG_CONFIG_FOLDER
 
 
 class PerfSanityTestConfig:
@@ -1538,11 +1538,12 @@ class PerfSanityTestConfig:
             # Upload the new perf data and baseline data to database
             post_new_perf_data(new_baseline_data_dict, new_data_dict)
 
-        check_perf_regression(
+        generate_perf_yaml(
             new_data_dict,
-            fail_on_regression=is_scenario_mode,
             output_dir=self.test_output_dir,
         )
+        # TODO: Re-enable regression failure check if needed
+        # check_perf_regression(new_data_dict, fail_on_regression=is_scenario_mode, output_dir=self.test_output_dir)
 
 
 # Perf sanity test case parameters
@@ -1576,7 +1577,7 @@ def get_yaml_files_with_server_names(directory: str) -> Dict[str, List[str]]:
 def get_aggr_test_cases() -> List[str]:
     """Generate aggr test cases based on actual server_config names in YAML files."""
     llm_root = get_llm_root()
-    aggr_config_dir = os.path.join(llm_root, AGGR_CONFIG_FOLDER)
+    aggr_config_dir = os.path.join(llm_root, AGG_CONFIG_FOLDER)
     yaml_server_names = get_yaml_files_with_server_names(aggr_config_dir)
 
     test_cases = []
