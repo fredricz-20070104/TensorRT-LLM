@@ -616,8 +616,7 @@ def main():
         elif "gen_only" in bm_config.get("mode", ""):
             concurrency = bm_config.get("concurrency", 1)
             ctx_worker_env_vars = (
-                f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
-                f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {ctx_worker_env_vars}"
+                f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 {ctx_worker_env_vars}"
             )
             gen_worker_env_vars = (
                 f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
