@@ -4,10 +4,8 @@ import os
 
 import yaml
 
-AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
-DISAGG_CONFIG_FOLDER = os.environ.get(
-    "DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated"
-)
+AGG_CONFIG_FOLDER = "tests/scripts/perf-sanity/aggregated"
+DISAGG_CONFIG_FOLDER = "tests/scripts/perf-sanity/disaggregated"
 
 
 def get_hardware_config(config, benchmark_mode):
@@ -390,9 +388,7 @@ def main():
             f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {gen_worker_env_vars}"
         )
 
-    pytest_common_vars = (
-        f"AGG_CONFIG_FOLDER='{AGG_CONFIG_FOLDER}' DISAGG_CONFIG_FOLDER='{DISAGG_CONFIG_FOLDER}' "
-    )
+    pytest_common_vars = ""
 
     script_prefix_lines.extend(
         [
