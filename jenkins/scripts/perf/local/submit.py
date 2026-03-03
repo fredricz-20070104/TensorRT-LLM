@@ -7,7 +7,9 @@ from datetime import datetime
 import yaml
 
 AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
-DISAGG_CONFIG_FOLDER = os.environ.get("DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated")
+DISAGG_CONFIG_FOLDER = os.environ.get(
+    "DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated"
+)
 
 
 def get_llm_src_default():
@@ -402,9 +404,7 @@ def main():
         choices=["source", "wheel"],
         help="Installation mode: source (pip install -e ., default) or wheel (pip install *.whl)",
     )
-    parser.add_argument(
-        "--capture-nsys", action="store_true", help="Capture nsys profile"
-    )
+    parser.add_argument("--capture-nsys", action="store_true", help="Capture nsys profile")
     parser.add_argument(
         "--nsys-start-stop",
         default="1-100",

@@ -672,7 +672,6 @@ def generate_perf_yaml(new_data_dict, output_dir=None):
 #         value = data[key]
 #         print_func(f'"{key}": {value}')
 
-
 # def check_perf_regression(new_data_dict,
 #                           fail_on_regression=False,
 #                           output_dir=None):
