@@ -1216,7 +1216,8 @@ def runLLMTestlistWithSbatch(pipeline, platform, testList, config=VANILLA_CONFIG
                         --run-sh ${scriptRunPathNode} \\
                         --install-sh ${scriptInstallPathNode} \\
                         --script-prefix ${scriptLaunchPrefixPathLocal} \\
-                        --srun-args ${scriptLaunchSrunArgsPathLocal}
+                        --srun-args ${scriptLaunchSrunArgsPathLocal} \\
+                        --split-group ${splitId}
                     """
                 } else {
                     if(nodeCount > 1) {

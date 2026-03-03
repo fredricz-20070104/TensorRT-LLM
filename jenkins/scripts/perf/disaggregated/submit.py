@@ -225,19 +225,35 @@ def get_pytest_commands(script_prefix_lines):
     )
 
 
-def parse_test_case_name(test_list_path, llm_src):
+def parse_test_case_name(test_list_path, llm_src, split_group=0):
     """Parse test list to get config yaml path and benchmark mode.
 
     Test formats for disagg:
     - Disagg e2e: disagg_upload-e2e-{config_base}
     - Disagg gen_only: disagg_upload-gen_only-{config_base}
 
+    Args:
+        test_list_path: Path to the test list file.
+        llm_src: Path to the LLM source code.
+        split_group: 1-indexed split group id. When > 0, selects the
+            split_group-th test from the list instead of the first one.
+
     Returns:
         tuple: (config_yaml_path, benchmark_mode)
             - benchmark_mode: "e2e" or "gen_only"
     """
     with open(test_list_path, "r") as f:
-        first_line = f.readline().strip()
+        lines = [line.strip() for line in f if line.strip()]
+
+    if split_group > 0:
+        if split_group > len(lines):
+            raise ValueError(
+                f"split_group {split_group} exceeds number of tests "
+                f"in test list ({len(lines)})"
+            )
+        first_line = lines[split_group - 1]
+    else:
+        first_line = lines[0]
 
     if "[" not in first_line or "]" not in first_line:
         raise ValueError(
@@ -306,10 +322,18 @@ def main():
         default="",
         help="Path to file containing srun args (optional, CI mode only)",
     )
+    parser.add_argument(
+        "--split-group",
+        type=int,
+        default=0,
+        help="1-indexed split group id. Selects the N-th test from the test list.",
+    )
 
     args = parser.parse_args()
 
-    config_yaml, benchmark_mode = parse_test_case_name(args.test_list, args.llm_src)
+    config_yaml, benchmark_mode = parse_test_case_name(
+        args.test_list, args.llm_src, args.split_group
+    )
 
     with open(config_yaml, "r") as f:
         config = yaml.safe_load(f)

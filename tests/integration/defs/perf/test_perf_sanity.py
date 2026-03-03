@@ -903,12 +903,16 @@ def get_config_dir(benchmark_mode: Optional[str]) -> str:
         benchmark_mode: "e2e", "gen_only", "ctx_only", or None (for normal aggr)
 
     Returns:
-        str: Config directory path (relative to llm_root)
+        str: Absolute config directory path
     """
     if benchmark_mode in ("e2e", "gen_only", "ctx_only"):
-        return DISAGG_CONFIG_FOLDER
+        if os.environ.get("DISAGG_CONFIG_FOLDER"):
+            return DISAGG_CONFIG_FOLDER
+        return os.path.join(get_llm_root(), DISAGG_CONFIG_FOLDER)
     else:
-        return AGG_CONFIG_FOLDER
+        if os.environ.get("AGG_CONFIG_FOLDER"):
+            return AGG_CONFIG_FOLDER
+        return os.path.join(get_llm_root(), AGG_CONFIG_FOLDER)
 
 
 class PerfSanityTestConfig:
@@ -964,10 +968,7 @@ class PerfSanityTestConfig:
         )
 
         # Get config_dir based on benchmark_mode
-        config_dir = get_config_dir(self.benchmark_mode)
-        self.config_dir = os.getenv(
-            "TRTLLM_CONFIG_FOLDER", os.path.join(get_llm_root(), config_dir)
-        )
+        self.config_dir = get_config_dir(self.benchmark_mode)
 
     def parse_config_file(self):
         """Parse config file based on runtime and benchmark_mode."""
@@ -1578,8 +1579,10 @@ def get_yaml_files_with_server_names(directory: str) -> Dict[str, List[str]]:
 
 def get_aggr_test_cases() -> List[str]:
     """Generate aggr test cases based on actual server_config names in YAML files."""
-    llm_root = get_llm_root()
-    aggr_config_dir = os.path.join(llm_root, AGG_CONFIG_FOLDER)
+    if os.environ.get("AGG_CONFIG_FOLDER"):
+        aggr_config_dir = AGG_CONFIG_FOLDER
+    else:
+        aggr_config_dir = os.path.join(get_llm_root(), AGG_CONFIG_FOLDER)
     yaml_server_names = get_yaml_files_with_server_names(aggr_config_dir)
 
     test_cases = []
@@ -1603,8 +1606,10 @@ def get_disagg_test_cases() -> List[str]:
     - Disagg gen_only: {test_type}-gen_only-{config_base}
     - ctx_only: aggr_{upload}-ctx_only-{config_base} (uses aggr prefix)
     """
-    llm_root = get_llm_root()
-    disagg_config_dir = os.path.join(llm_root, DISAGG_CONFIG_FOLDER)
+    if os.environ.get("DISAGG_CONFIG_FOLDER"):
+        disagg_config_dir = DISAGG_CONFIG_FOLDER
+    else:
+        disagg_config_dir = os.path.join(get_llm_root(), DISAGG_CONFIG_FOLDER)
     yaml_files = glob.glob(os.path.join(disagg_config_dir, "*.yaml"))
     basenames = sorted([os.path.splitext(os.path.basename(f))[0] for f in yaml_files])
 
