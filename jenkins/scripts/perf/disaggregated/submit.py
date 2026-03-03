@@ -248,8 +248,7 @@ def parse_test_case_name(test_list_path, llm_src, split_group=0):
     if split_group > 0:
         if split_group > len(lines):
             raise ValueError(
-                f"split_group {split_group} exceeds number of tests "
-                f"in test list ({len(lines)})"
+                f"split_group {split_group} exceeds number of tests in test list ({len(lines)})"
             )
         first_line = lines[split_group - 1]
     else:
