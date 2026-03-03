@@ -9,7 +9,7 @@ ERROR_KEYWORDS = [
     "ClientConnectorError",
     "CancelledError",
     "TimeoutError",
-    "PMI2_Init failed to intialize",
+    "PMI2_Init failed to initialize",
     "OSError",
 ]
 SLURM_LOG_TAIL_LINES = 200  # Number of lines to print from slurm job logs

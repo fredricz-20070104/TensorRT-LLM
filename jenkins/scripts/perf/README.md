@@ -16,7 +16,6 @@ jenkins/scripts/perf/
     slurm_install.sh         # Build wheel + pip install inside container
     slurm_run.sh             # Run pytest inside container
   perf_utils.py              # Shared utilities (regression detection, baseline, charts, OpenSearch queries)
-  get_post_merge_html.py     # Post-merge regression dashboard (thin wrapper around perf_utils)
   get_pre_merge_html.py      # Pre-merge HTML report with history, baseline, and threshold
   perf_sanity_triage.py      # Query/update OpenSearch data and send Slack notifications
 ```
@@ -86,16 +85,6 @@ Shared module imported by `get_post_merge_html.py`, `get_pre_merge_html.py`, and
   report with three-way cascading filters and click-to-inspect data-point popups.
 
 ## Post-Processing and Triage
-
-### `get_post_merge_html.py`
-
-Standalone post-merge regression dashboard. Queries OpenSearch for post-merge
-history data, computes baselines, classifies regression patterns, and generates
-an interactive HTML dashboard. Thin wrapper around `perf_utils`.
-
-```bash
-python3 get_post_merge_html.py --output perf_history.html
-```
 
 ### `get_pre_merge_html.py`
 

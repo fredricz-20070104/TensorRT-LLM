@@ -158,6 +158,7 @@ def _daily_aggregate(points):
     Args:
         points: list of (datetime, float) or (datetime, float, data_dict)
                 tuples.
+
     Returns:
         list of (date_str, float, [data_dicts]) triples sorted by date.
         The third element is a list of original data dicts for that day
@@ -189,7 +190,7 @@ def _rolling_smooth(values, window=3):
     smoothed = []
     for i in range(len(values)):
         start = max(0, i - window + 1)
-        w = values[start:i + 1]
+        w = values[start : i + 1]
         smoothed.append(sum(w) / len(w))
     return smoothed
 
@@ -288,8 +289,7 @@ def _extract_jump_commits(daily_entries, daily_dates, js_idx, je_idx):
         if isinstance(ts_raw, (int, float)):
             if ts_raw > 1e12:
                 ts_raw = ts_raw / 1000
-            ts_str = datetime.fromtimestamp(ts_raw).strftime(
-                "%Y-%m-%d %H:%M")
+            ts_str = datetime.fromtimestamp(ts_raw).strftime("%Y-%m-%d %H:%M")
         else:
             ts_str = str(ts_raw)
         return {"s_commit": str(commit), "timestamp": ts_str}
@@ -329,7 +329,7 @@ def _rolling_stats(values, window=_ROLLING_WINDOW):
     rolling_means = []
     rolling_cvs = []
     for i in range(len(values) - window + 1):
-        w = values[i:i + window]
+        w = values[i : i + window]
         m = sum(w) / len(w)
         rolling_means.append(m)
         rolling_cvs.append(_cv(w))
@@ -439,17 +439,14 @@ def _classify_regression_type(daily_values):
     ``"sudden_drop"``, ``"gradual_decline"``, ``"other_reasons"``.
     """
     n_days = len(daily_values)
-    rolling_means, rolling_cvs, direction_changes = _rolling_stats(
-        daily_values)
+    rolling_means, rolling_cvs, direction_changes = _rolling_stats(daily_values)
 
     # --- Significant Fluctuation ---
-    normalized_dir_changes = (
-        direction_changes * 30 / n_days if n_days > 0 else 0
-    )
+    normalized_dir_changes = direction_changes * 30 / n_days if n_days > 0 else 0
     oscillation_windows = 0
     if rolling_means:
         for i in range(len(rolling_means)):
-            w = daily_values[i:i + _ROLLING_WINDOW]
+            w = daily_values[i : i + _ROLLING_WINDOW]
             if w and max(w) > 0:
                 amp = (max(w) - min(w)) / max(w)
                 if amp > _REGRESSION_THRESHOLD:
@@ -465,30 +462,27 @@ def _classify_regression_type(daily_values):
             else:
                 stable_run = 0
 
-        if (normalized_dir_changes > _DIRECTION_CHANGE_THRESHOLD
-                and oscillation_windows > len(rolling_means) * 0.3
-                and not has_long_stable):
+        if (
+            normalized_dir_changes > _DIRECTION_CHANGE_THRESHOLD
+            and oscillation_windows > len(rolling_means) * 0.3
+            and not has_long_stable
+        ):
             return "significant_fluctuation", None
 
     # --- Occasional Spike ---
     if n_days >= 3:
         mean_val = sum(daily_values) / n_days
-        std_val = math.sqrt(
-            sum((v - mean_val) ** 2 for v in daily_values) / n_days
-        )
+        std_val = math.sqrt(sum((v - mean_val) ** 2 for v in daily_values) / n_days)
         if std_val > 0:
             outlier_indices = [
-                i for i, v in enumerate(daily_values)
+                i
+                for i, v in enumerate(daily_values)
                 if abs(v - mean_val) / std_val > _OUTLIER_ZSCORE
             ]
         else:
             outlier_indices = []
-        non_outlier_vals = [
-            v for i, v in enumerate(daily_values) if i not in outlier_indices
-        ]
-        if (len(outlier_indices) < 3
-                and non_outlier_vals
-                and _is_stable(non_outlier_vals)):
+        non_outlier_vals = [v for i, v in enumerate(daily_values) if i not in outlier_indices]
+        if len(outlier_indices) < 3 and non_outlier_vals and _is_stable(non_outlier_vals):
             max_consecutive_low = 0
             consecutive = 0
             low_threshold = mean_val - _REGRESSION_THRESHOLD * mean_val
@@ -515,39 +509,40 @@ def _classify_regression_type(daily_values):
         if adj_left == adj_right:
             adj_right = min(n_days - 1, adj_right + 1)
 
-        if (len(pre_segment) >= _MIN_STABLE_SEGMENT
-                and len(post_segment) >= _MIN_CONFIRMATION_DAYS):
+        if len(pre_segment) >= _MIN_STABLE_SEGMENT and len(post_segment) >= _MIN_CONFIRMATION_DAYS:
             pre_stable = _is_stable(pre_segment)
             post_stable = _is_stable(post_segment)
             pre_mean = sum(pre_segment) / len(pre_segment)
             post_mean = sum(post_segment) / len(post_segment)
 
             transition_width = abs(jump_end - jump_start) + 1
-            shift = ((pre_mean - post_mean) / pre_mean
-                     if pre_mean > 0 else 0)
+            shift = (pre_mean - post_mean) / pre_mean if pre_mean > 0 else 0
 
-            if (pre_stable and post_stable
-                    and shift > _REGRESSION_THRESHOLD
-                    and transition_width <= 2):
+            if (
+                pre_stable
+                and post_stable
+                and shift > _REGRESSION_THRESHOLD
+                and transition_width <= 2
+            ):
                 return "sudden_drop", (adj_left, adj_right)
 
-            if (pre_stable and post_stable
-                    and shift > _REGRESSION_THRESHOLD
-                    and transition_width > 2):
-                decline_vals = daily_values[jump_start:jump_end + 1]
+            if (
+                pre_stable
+                and post_stable
+                and shift > _REGRESSION_THRESHOLD
+                and transition_width > 2
+            ):
+                decline_vals = daily_values[jump_start : jump_end + 1]
                 if len(decline_vals) >= 3:
                     x_vals = list(range(len(decline_vals)))
                     x_mean = sum(x_vals) / len(x_vals)
                     y_mean = sum(decline_vals) / len(decline_vals)
-                    ss_xy = sum(
-                        (x - x_mean) * (y - y_mean)
-                        for x, y in zip(x_vals, decline_vals)
-                    )
+                    ss_xy = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_vals, decline_vals))
                     ss_xx = sum((x - x_mean) ** 2 for x in x_vals)
                     ss_yy = sum((y - y_mean) ** 2 for y in decline_vals)
                     if ss_xx > 0 and ss_yy > 0:
                         slope = ss_xy / ss_xx
-                        r_squared = (ss_xy ** 2) / (ss_xx * ss_yy)
+                        r_squared = (ss_xy**2) / (ss_xx * ss_yy)
                         if slope < 0 and r_squared > 0.7:
                             return "gradual_decline", (adj_left, adj_right)
 
@@ -556,8 +551,7 @@ def _classify_regression_type(daily_values):
     return "other_reasons", None
 
 
-def classify_single_metric(daily_values, baseline,
-                           threshold=_REGRESSION_THRESHOLD):
+def classify_single_metric(daily_values, baseline, threshold=_REGRESSION_THRESHOLD):
     """Two-step classification for one metric's time series.
 
     Step 1 -- Regression check:
@@ -626,8 +620,7 @@ def classify_test_case(grouped_data):
             baseline = baselines.get(metric, 0.0)
 
             threshold = _get_threshold_for_metric(baseline_data_list, metric)
-            curve_type, jump = classify_single_metric(
-                daily_vals, baseline, threshold)
+            curve_type, jump = classify_single_metric(daily_vals, baseline, threshold)
             per_metric_results[metric] = curve_type
 
             jump_dates = None
@@ -637,10 +630,8 @@ def classify_test_case(grouped_data):
                 js = max(0, min(js, len(daily_dates) - 1))
                 je = max(0, min(je, len(daily_dates) - 1))
                 jump_dates = (daily_dates[js], daily_dates[je])
-                if curve_type in ("sudden_drop", "gradual_decline",
-                                  "other_reasons"):
-                    jump_commits = _extract_jump_commits(
-                        daily_entries, daily_dates, js, je)
+                if curve_type in ("sudden_drop", "gradual_decline", "other_reasons"):
+                    jump_commits = _extract_jump_commits(daily_entries, daily_dates, js, je)
 
             per_metric_info[metric] = {
                 "curve_type": curve_type,
@@ -652,9 +643,7 @@ def classify_test_case(grouped_data):
         # Both NR and OS are "transparent" (defer to the other metric).
         # Priority: SF > OR > GD > SD > OS > NR
         classification_types = [
-            per_metric_results[m]
-            for m in CLASSIFICATION_METRICS
-            if m in per_metric_results
+            per_metric_results[m] for m in CLASSIFICATION_METRICS if m in per_metric_results
         ]
 
         if not classification_types:
@@ -738,15 +727,11 @@ def get_history_data(extra_must_clauses=None):
     for key, bucket in groups.items():
         bucket["history_data"] = sorted(
             bucket["history_data"],
-            key=lambda d: _parse_timestamp(
-                d.get("ts_created") or d.get("@timestamp", 0)
-            ),
+            key=lambda d: _parse_timestamp(d.get("ts_created") or d.get("@timestamp", 0)),
         )
         bucket["baseline_data"] = sorted(
             bucket["baseline_data"],
-            key=lambda d: _parse_timestamp(
-                d.get("ts_created") or d.get("@timestamp", 0)
-            ),
+            key=lambda d: _parse_timestamp(d.get("ts_created") or d.get("@timestamp", 0)),
         )
 
     return groups
@@ -763,10 +748,16 @@ _PLOT_W = _SVG_WIDTH - _MARGIN["left"] - _MARGIN["right"]
 _PLOT_H = _SVG_HEIGHT - _MARGIN["top"] - _MARGIN["bottom"]
 
 
-def _generate_svg_chart(history_points, metric, label,
-                        new_points=None, baseline_value=None,
-                        threshold_line_value=None,
-                        curve_type=None, jump_interval=None):
+def _generate_svg_chart(
+    history_points,
+    metric,
+    label,
+    new_points=None,
+    baseline_value=None,
+    threshold_line_value=None,
+    curve_type=None,
+    jump_interval=None,
+):
     """Return an SVG string for a single metric chart.
 
     Args:
@@ -792,14 +783,10 @@ def _generate_svg_chart(history_points, metric, label,
         all_values.append(threshold_line_value)
 
     if not history_points and not new_points and baseline_value is None:
-        return (
-            f'<div style="color:#888;padding:10px;">No data for '
-            f"{escape_html(label)}</div>"
-        )
+        return f'<div style="color:#888;padding:10px;">No data for {escape_html(label)}</div>'
     if not all_values:
         return (
-            f'<div style="color:#888;padding:10px;">No numeric data for '
-            f"{escape_html(label)}</div>"
+            f'<div style="color:#888;padding:10px;">No numeric data for {escape_html(label)}</div>'
         )
 
     min_val = min(all_values)
@@ -814,8 +801,7 @@ def _generate_svg_chart(history_points, metric, label,
         dates.extend(d for d, _ in new_points)
     if not dates:
         return (
-            f'<div style="color:#888;padding:10px;">No data points for '
-            f"{escape_html(label)}</div>"
+            f'<div style="color:#888;padding:10px;">No data points for {escape_html(label)}</div>'
         )
 
     min_ts = min(dates).timestamp()
@@ -895,9 +881,7 @@ def _generate_svg_chart(history_points, metric, label,
     unique_dates = sorted(set(dates))
     n_labels = min(6, len(unique_dates))
     if len(unique_dates) >= n_labels:
-        label_dates = unique_dates[:: max(1, len(unique_dates) // n_labels)][
-            :n_labels
-        ]
+        label_dates = unique_dates[:: max(1, len(unique_dates) // n_labels)][:n_labels]
     else:
         label_dates = unique_dates
     for dt in label_dates:
@@ -960,12 +944,10 @@ def _generate_svg_chart(history_points, metric, label,
     )
     if len(sorted_hist) > 1:
         path_d = " ".join(
-            f'{"M" if i == 0 else "L"}{_x(d):.1f},{_y(v):.1f}'
+            f"{'M' if i == 0 else 'L'}{_x(d):.1f},{_y(v):.1f}"
             for i, (d, v, *_) in enumerate(sorted_hist)
         )
-        svg.append(
-            f'<path d="{path_d}" fill="none" stroke="#4285f4" stroke-width="2"/>'
-        )
+        svg.append(f'<path d="{path_d}" fill="none" stroke="#4285f4" stroke-width="2"/>')
     for item in sorted_hist:
         d, v = item[0], item[1]
         dd = item[2] if len(item) > 2 else None
@@ -978,10 +960,7 @@ def _generate_svg_chart(history_points, metric, label,
                 f"<title>{d.strftime('%Y-%m-%d %H:%M')}  {v:.2f}</title></circle>"
             )
         else:
-            svg.append(
-                f'<circle cx="{_x(d):.1f}" cy="{_y(v):.1f}" r="3" '
-                f'fill="#4285f4"/>'
-            )
+            svg.append(f'<circle cx="{_x(d):.1f}" cy="{_y(v):.1f}" r="3" fill="#4285f4"/>')
 
     # New data points (red)
     if new_points:
@@ -996,21 +975,15 @@ def _generate_svg_chart(history_points, metric, label,
     # Legend
     legend_y = _MARGIN["top"] + _PLOT_H + 35
     legend_x = _MARGIN["left"] + 10
+    svg.append(f'<circle cx="{legend_x}" cy="{legend_y}" r="4" fill="#4285f4"/>')
     svg.append(
-        f'<circle cx="{legend_x}" cy="{legend_y}" r="4" fill="#4285f4"/>'
-    )
-    svg.append(
-        f'<text x="{legend_x + 8}" y="{legend_y + 4}" '
-        f'font-size="10" fill="#666">History</text>'
+        f'<text x="{legend_x + 8}" y="{legend_y + 4}" font-size="10" fill="#666">History</text>'
     )
     legend_x += 70
     if new_points:
+        svg.append(f'<circle cx="{legend_x}" cy="{legend_y}" r="4" fill="#d93025"/>')
         svg.append(
-            f'<circle cx="{legend_x}" cy="{legend_y}" r="4" fill="#d93025"/>'
-        )
-        svg.append(
-            f'<text x="{legend_x + 8}" y="{legend_y + 4}" '
-            f'font-size="10" fill="#666">New</text>'
+            f'<text x="{legend_x + 8}" y="{legend_y + 4}" font-size="10" fill="#666">New</text>'
         )
         legend_x += 50
     if baseline_value is not None:
@@ -1075,7 +1048,9 @@ def generate_post_merge_html(grouped_data, output_file):
             m_info = per_metric_info.get(metric, {})
             charts.append(
                 _generate_svg_chart(
-                    hist_pts, metric, label,
+                    hist_pts,
+                    metric,
+                    label,
                     baseline_value=baseline_val,
                     curve_type=m_info.get("curve_type"),
                     jump_interval=m_info.get("jump_interval"),
@@ -1093,9 +1068,7 @@ def generate_post_merge_html(grouped_data, output_file):
                 if val is not None and bl_val is not None and bl_val != 0:
                     diff_pct = (val - bl_val) / bl_val * 100
                     color = "#0d904f" if diff_pct >= 0 else "#d93025"
-                    diff_str = (
-                        f' <span style="color:{color}">({diff_pct:+.2f}%)</span>'
-                    )
+                    diff_str = f' <span style="color:{color}">({diff_pct:+.2f}%)</span>'
                 val_str = f"{val:.2f}" if val is not None else "N/A"
                 bl_str = f"{bl_val:.2f}" if bl_val is not None else "N/A"
                 m_info = per_metric_info.get(metric, {})
@@ -1107,13 +1080,13 @@ def generate_post_merge_html(grouped_data, output_file):
                 if m_jump:
                     jump_str = (
                         f' <span style="color:#666;font-size:11px;">'
-                        f'[{m_jump[0]} ~ {m_jump[1]}]</span>'
+                        f"[{m_jump[0]} ~ {m_jump[1]}]</span>"
                     )
                 ct_cell = (
                     f'<span style="display:inline-block;padding:1px 7px;'
-                    f'border-radius:8px;background:{m_ct_color};color:#fff;'
+                    f"border-radius:8px;background:{m_ct_color};color:#fff;"
                     f'font-size:10px;font-weight:bold;">{m_ct_label}</span>'
-                    f'{jump_str}'
+                    f"{jump_str}"
                 )
                 jc = m_info.get("jump_commits")
                 jl_cell = ""
@@ -1125,17 +1098,17 @@ def generate_post_merge_html(grouped_data, output_file):
                         short = left["s_commit"][:8]
                         ts = left.get("timestamp", "")
                         jl_cell = (
-                            f'<code>{escape_html(short)}</code>'
+                            f"<code>{escape_html(short)}</code>"
                             f'<br><span style="color:#888;font-size:10px;">'
-                            f'{escape_html(ts)}</span>'
+                            f"{escape_html(ts)}</span>"
                         )
                     if right and right.get("s_commit"):
                         short = right["s_commit"][:8]
                         ts = right.get("timestamp", "")
                         jr_cell = (
-                            f'<code>{escape_html(short)}</code>'
+                            f"<code>{escape_html(short)}</code>"
                             f'<br><span style="color:#888;font-size:10px;">'
-                            f'{escape_html(ts)}</span>'
+                            f"{escape_html(ts)}</span>"
                         )
                 summary_rows += (
                     f"<tr><td>{METRIC_LABELS.get(metric, metric)}</td>"
@@ -1151,8 +1124,18 @@ def generate_post_merge_html(grouped_data, output_file):
         ct_label = _CURVE_TYPE_LABELS.get(curve_type, curve_type)
 
         header = escape_html(f"{test_case}  [{gpu_type}]")
+        data_gpu = escape_html(gpu_type)
+        data_test = escape_html(test_case)
+        data_curve = escape_html(curve_type)
+        table_header = (
+            "<thead><tr><th>Metric</th><th>Latest Value</th>"
+            "<th>Baseline (P95)</th><th>Curve Type</th>"
+            "<th>Jump Left</th><th>Jump Right</th></tr></thead>"
+        )
         section = f"""
-        <details class="test-section" data-gpu="{escape_html(gpu_type)}" data-test="{escape_html(test_case)}" data-curve-type="{escape_html(curve_type)}" open>
+        <details class="test-section" data-gpu="{data_gpu}" data-test="{
+            data_test
+        }" data-curve-type="{data_curve}" open>
             <summary><strong>{header}</strong>
                 <span class="badge">{n_points} runs</span>
                 <span class="curve-badge" style="background:{ct_color};">{ct_label}</span>
@@ -1160,12 +1143,16 @@ def generate_post_merge_html(grouped_data, output_file):
             <div class="charts-grid">
                 {"".join(charts)}
             </div>
-            {"" if not summary_rows else f'''
+            {
+            ""
+            if not summary_rows
+            else f'''
             <table class="summary-table">
-                <thead><tr><th>Metric</th><th>Latest Value</th><th>Baseline (P95)</th><th>Curve Type</th><th>Jump Left</th><th>Jump Right</th></tr></thead>
+                {table_header}
                 <tbody>{summary_rows}</tbody>
             </table>
-            '''}
+            '''
+        }
         </details>
         """
         sections.append(section)
@@ -1188,21 +1175,27 @@ def generate_post_merge_html(grouped_data, output_file):
 
     triples_json = _json.dumps(section_tuples)
 
-    gpu_chips = ['<button class="chip active" data-filter-gpu="__all__" onclick="selectGpu(this)">All</button>']
+    gpu_chips = [
+        '<button class="chip active" data-filter-gpu="__all__" onclick="selectGpu(this)">All</button>'
+    ]
     for gpu in all_gpu_types:
         gpu_chips.append(
             f'<button class="chip" data-filter-gpu="{escape_html(gpu)}" '
             f'onclick="selectGpu(this)">{escape_html(gpu)}</button>'
         )
 
-    test_chips = ['<button class="chip active" data-filter-test="__all__" onclick="selectTest(this)">All</button>']
+    test_chips = [
+        '<button class="chip active" data-filter-test="__all__" onclick="selectTest(this)">All</button>'
+    ]
     for tc in all_test_cases:
         test_chips.append(
             f'<button class="chip" data-filter-test="{escape_html(tc)}" '
             f'onclick="selectTest(this)">{escape_html(tc)}</button>'
         )
 
-    curve_chips = ['<button class="chip active" data-filter-curve="__all__" onclick="selectCurve(this)">All</button>']
+    curve_chips = [
+        '<button class="chip active" data-filter-curve="__all__" onclick="selectCurve(this)">All</button>'
+    ]
     for ct in all_curve_types:
         ct_color = _CURVE_TYPE_COLORS.get(ct, "#888")
         ct_label = _CURVE_TYPE_LABELS.get(ct, ct)
@@ -1211,7 +1204,7 @@ def generate_post_merge_html(grouped_data, output_file):
             f'onclick="selectCurve(this)">'
             f'<span style="display:inline-block;width:8px;height:8px;'
             f'border-radius:50%;background:{ct_color};margin-right:4px;"></span>'
-            f'{escape_html(ct_label)}</button>'
+            f"{escape_html(ct_label)}</button>"
         )
 
     html = f"""<!DOCTYPE html>
@@ -1624,7 +1617,4 @@ def generate_post_merge_html(grouped_data, output_file):
 """
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html)
-    print(
-        f"Generated perf history report with {len(grouped_data)} test cases: "
-        f"{output_file}"
-    )
+    print(f"Generated perf history report with {len(grouped_data)} test cases: {output_file}")

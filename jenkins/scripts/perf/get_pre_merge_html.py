@@ -22,6 +22,7 @@ for regression comparison.
 """
 
 import argparse
+import os
 from html import escape as escape_html
 
 import yaml
@@ -33,7 +34,6 @@ if not os.environ.get("OPEN_SEARCH_DB_BASE_URL"):
 
 from perf_utils import (
     CHART_METRICS,
-    DEFAULT_THRESHOLD,
     METRIC_LABELS,
     _extract_points,
     _generate_svg_chart,
@@ -48,8 +48,7 @@ from perf_utils import (
 
 
 def load_perf_data(input_files):
-    """Read comma-separated perf_data.yaml paths and return a flat list of
-    new_data dicts."""
+    """Read comma-separated perf_data.yaml paths and return a flat list of new_data dicts."""
     yaml_files = [f.strip() for f in input_files.split(",") if f.strip()]
     all_new_data = []
     load_failures = 0
@@ -69,9 +68,7 @@ def load_perf_data(input_files):
             load_failures += 1
             print(f"Warning: Failed to load {yaml_file}: {exc}")
     if yaml_files and not all_new_data and load_failures == len(yaml_files):
-        raise RuntimeError(
-            "Failed to load any perf data YAML inputs; cannot generate report."
-        )
+        raise RuntimeError("Failed to load any perf data YAML inputs; cannot generate report.")
     return all_new_data
 
 
@@ -103,10 +100,12 @@ def get_pre_merge_history_data(new_data_list):
         key = (nd.get("s_test_case_name", ""), nd.get("s_gpu_type", ""))
         needed_keys.add(key)
 
-    grouped = get_history_data(extra_must_clauses=[
-        {"term": {"b_is_post_merge": True}},
-        {"term": {"s_branch": "main"}},
-    ])
+    grouped = get_history_data(
+        extra_must_clauses=[
+            {"term": {"b_is_post_merge": True}},
+            {"term": {"s_branch": "main"}},
+        ]
+    )
 
     if grouped is None:
         print("Warning: Failed to query history data from OpenSearch")
@@ -181,13 +180,14 @@ def generate_pre_merge_html(new_data_list, history_grouped, output_file):
             # Threshold line value
             threshold_line_value = None
             if baseline_value is not None:
-                threshold = _get_threshold_for_metric(
-                    baseline_data_list, metric)
+                threshold = _get_threshold_for_metric(baseline_data_list, metric)
                 threshold_line_value = baseline_value * (1 - threshold)
 
             charts.append(
                 _generate_svg_chart(
-                    hist_pts, metric, label,
+                    hist_pts,
+                    metric,
+                    label,
                     new_points=new_pts,
                     baseline_value=baseline_value,
                     threshold_line_value=threshold_line_value,
@@ -245,8 +245,7 @@ def generate_pre_merge_html(new_data_list, history_grouped, output_file):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"Generated pre-merge perf report with {len(new_groups)} test "
-          f"cases: {output_file}")
+    print(f"Generated pre-merge perf report with {len(new_groups)} test cases: {output_file}")
 
 
 # ---------------------------------------------------------------------------
@@ -257,15 +256,15 @@ def generate_pre_merge_html(new_data_list, history_grouped, output_file):
 def main():
     parser = argparse.ArgumentParser(
         description="Generate a pre-merge HTML report with historical "
-        "performance charts, baseline, and threshold lines.")
-    parser.add_argument("--input-files",
-                        type=str,
-                        required=True,
-                        help="Comma-separated list of perf_data.yaml paths")
-    parser.add_argument("--output-file",
-                        type=str,
-                        required=True,
-                        help="Output HTML file path")
+        "performance charts, baseline, and threshold lines."
+    )
+    parser.add_argument(
+        "--input-files",
+        type=str,
+        required=True,
+        help="Comma-separated list of perf_data.yaml paths",
+    )
+    parser.add_argument("--output-file", type=str, required=True, help="Output HTML file path")
     args = parser.parse_args()
 
     new_data_list = load_perf_data(args.input_files)

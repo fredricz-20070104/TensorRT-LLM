@@ -5,7 +5,9 @@ import os
 import yaml
 
 AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
-DISAGG_CONFIG_FOLDER = os.environ.get("DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated")
+DISAGG_CONFIG_FOLDER = os.environ.get(
+    "DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated"
+)
 
 
 def get_hardware_config(config, benchmark_mode):
@@ -359,17 +361,14 @@ def main():
         srun_args_lines.append("--container-env=TRTLLM_DISAGG_BENCHMARK_GEN_ONLY")
     elif "gen_only" in benchmark_mode:
         concurrency = benchmark_config.get("concurrency", 1)
-        ctx_worker_env_vars = (
-            f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 {ctx_worker_env_vars}"
-        )
+        ctx_worker_env_vars = f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 {ctx_worker_env_vars}"
         gen_worker_env_vars = (
             f"TRTLLM_DISABLE_KV_CACHE_TRANSFER_OVERLAP=1 "
             f"TLLM_BENCHMARK_REQ_QUEUES_SIZE={concurrency} {gen_worker_env_vars}"
         )
 
     pytest_common_vars = (
-        f"AGG_CONFIG_FOLDER='{AGG_CONFIG_FOLDER}' "
-        f"DISAGG_CONFIG_FOLDER='{DISAGG_CONFIG_FOLDER}' "
+        f"AGG_CONFIG_FOLDER='{AGG_CONFIG_FOLDER}' DISAGG_CONFIG_FOLDER='{DISAGG_CONFIG_FOLDER}' "
     )
 
     script_prefix_lines.extend(
@@ -382,8 +381,10 @@ def main():
             f'export GEN_WORKER_ENV_VARS="{gen_worker_env_vars}"',
             f'export SERVER_ENV_VARS="{server_env_vars}"',
             f'export BENCHMARK_ENV_VARS="{env_config["benchmark_env_var"]}"',
-            'export pytestCommandCTXWorker="unset UCX_TLS && $CTX_WORKER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
-            'export pytestCommandGENWorker="unset UCX_TLS && $GEN_WORKER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
+            'export pytestCommandCTXWorker="unset UCX_TLS && $CTX_WORKER_ENV_VARS'
+            ' $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
+            'export pytestCommandGENWorker="unset UCX_TLS && $GEN_WORKER_ENV_VARS'
+            ' $PYTEST_COMMON_VARS $partialPytestCommandWorker"',
             'export pytestCommandDisaggServer="$SERVER_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandDisaggServer"',
             'export pytestCommandBenchmark="$BENCHMARK_ENV_VARS $PYTEST_COMMON_VARS $partialPytestCommandBenchmark"',
             f"export runScript={args.run_sh}",

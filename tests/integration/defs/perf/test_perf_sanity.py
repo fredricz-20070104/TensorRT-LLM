@@ -67,7 +67,9 @@ SUPPORTED_GPU_MAPPING = {
 
 DEFAULT_TIMEOUT = 5400
 AGG_CONFIG_FOLDER = os.environ.get("AGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/aggregated")
-DISAGG_CONFIG_FOLDER = os.environ.get("DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated")
+DISAGG_CONFIG_FOLDER = os.environ.get(
+    "DISAGG_CONFIG_FOLDER", "tests/scripts/perf-sanity/disaggregated"
+)
 
 # Regex patterns for parsing benchmark output metrics
 # Key is the metric name used in database (e.g., "mean_e2el", "seq_throughput")
@@ -1425,7 +1427,7 @@ class PerfSanityTestConfig:
                     if not match_keys:
                         if server_config.match_mode == "scenario":
                             match_keys = SCENARIO_MATCH_FIELDS.copy()
-                            is_scenario_mode = True
+                            is_scenario_mode = True  # noqa: F841
                         else:
                             match_keys.extend(["s_gpu_type", "s_runtime"])
                             match_keys.extend(server_config.to_match_keys())
