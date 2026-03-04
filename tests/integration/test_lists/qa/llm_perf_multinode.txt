@@ -1,0 +1,4 @@
+# aggr multi-node
+perf/test_perf_sanity.py::test_e2e[aggr-deepseek_r1_fp4_v2_2_nodes_grace_blackwell-r1_fp4_v2_tep8_mtp3]
+# disagg multi-node
+perf/test_perf_sanity.py::test_e2e[disagg-gb300_deepseek-r1-fp4_1k1k_con1024_ctx1_dep4_gen1_dep32_eplb0_mtp3_ccb-UCX]
