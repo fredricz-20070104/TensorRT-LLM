@@ -56,6 +56,7 @@ MODEL_PATH_DICT = {
     "k2_thinking_fp4": "Kimi-K2-Thinking-NVFP4",
     "qwen3_235b_a22b_fp4": "Qwen3/saved_models_Qwen3-235B-A22B_nvfp4_hf",  # Qwen3-235B-A22B-FP4
     "qwen3_235b_a22b_fp8": "Qwen3/saved_models_Qwen3-235B-A22B_fp8_hf",  # Qwen3-235B-A22B-FP8
+    "llama_v3.3_70b_instruct_fp4": "llama-3.3-models/Llama-3.3-70B-Instruct-FP4",
 }
 
 SUPPORTED_GPU_MAPPING = {
@@ -610,6 +611,7 @@ class DisaggTestCmds(NamedTuple):
     num_gen_servers: int
     output_dir: str
     test_output_dir: str
+    model_name: str = ""
 
     def _generate_hostname_file(self, server_idx: int, port: int):
         """Create hostname file for coordination."""
@@ -620,7 +622,7 @@ class DisaggTestCmds(NamedTuple):
         with open(hostname_file, "w") as f:
             f.write(f"{self.hostname}:{port}")
 
-    def _generate_disagg_server_config(self, server_idx: int, disagg_server_port: int) -> str:
+    def _generate_disagg_server_config(self, server_idx: int) -> str:
         """Generate disagg server config from hostname files."""
         print_info(f"Generating disagg server config for server index {server_idx}")
         hostnames_folder = os.path.join(self.test_output_dir, f"hostnames-{server_idx}")
@@ -657,6 +659,11 @@ class DisaggTestCmds(NamedTuple):
                 ctx_hostnames.append(hostname_port)
             elif hostname_file.startswith("GEN"):
                 gen_hostnames.append(hostname_port)
+
+        # Allocate port here (after waiting) to minimize the window between
+        # port allocation and actual use, avoiding TOCTOU race conditions
+        # where another process on the same node grabs the port.
+        disagg_server_port = get_free_port()
 
         server_config = {
             "hostname": self.hostname,
@@ -738,10 +745,9 @@ class DisaggTestCmds(NamedTuple):
         benchmark_status_file = os.path.join(
             self.test_output_dir, f"benchmark_status.{server_idx}.txt"
         )
-        port = get_free_port()
-
         ctx_cmd, gen_cmd, disagg_cmd = self.server_cmds[server_idx]
         if "CTX" in self.disagg_serving_type or "GEN" in self.disagg_serving_type:
+            port = get_free_port()
             self._generate_hostname_file(server_idx, port)
             is_ctx = "CTX" in self.disagg_serving_type
             server_cmd = ctx_cmd if is_ctx else gen_cmd
@@ -769,7 +775,7 @@ class DisaggTestCmds(NamedTuple):
 
         elif self.disagg_serving_type == "DISAGG_SERVER":
             try:
-                self._generate_disagg_server_config(server_idx, port)
+                self._generate_disagg_server_config(server_idx)
                 print_info(f"Starting disagg server. cmd is {disagg_cmd}")
                 disagg_server_file_path = os.path.join(
                     self.test_output_dir,
@@ -820,6 +826,22 @@ class DisaggTestCmds(NamedTuple):
                         benchmark_ctx.write(output)
                     outputs.append(output)
 
+                # Run accuracy tests after benchmark (if configured)
+                acc_cfg_json = os.environ.get("ACCURACY_CONFIG_JSON")
+                if acc_cfg_json:
+                    import json as _json
+
+                    acc_cfg = _json.loads(acc_cfg_json)
+                    if acc_cfg.get("enable_accuracy_test"):
+                        _run_accuracy_tests(
+                            acc_cfg,
+                            self.model_name,
+                            disagg_server_hostname,
+                            disagg_server_port,
+                            self.test_output_dir,
+                            server_idx,
+                        )
+
             finally:
                 with open(benchmark_status_file, "w") as status_file:
                     status_file.write("Done")
@@ -828,6 +850,60 @@ class DisaggTestCmds(NamedTuple):
 
     def get_cmd_str(self, server_idx: int) -> List[str]:
         return ["multi-node disaggregated server tests, please check config files"]
+
+
+def _run_accuracy_tests(
+    accuracy_cfg: dict,
+    model_name: str,
+    server_hostname: str,
+    server_port: int,
+    output_dir: str,
+    server_idx: int,
+) -> None:
+    """Run lm_eval against the running disagg server. Saves results only — no validation."""
+    endpoint_map = {
+        "local-completions": "v1/completions",
+        "local-chat-completions": "v1/chat/completions",
+    }
+    env_var = accuracy_cfg.get("env_var") or {}
+    model_path = get_model_dir(model_name)
+
+    for task_name, task_cfg in accuracy_cfg.get("tasks", {}).items():
+        model_type = task_cfg.get("model", "local-completions")
+        model_args_extra = task_cfg.get("model_args_extra", "")
+        extra_kwargs = task_cfg.get("extra_kwargs", {})
+        base_url = f"http://{server_hostname}:{server_port}/{endpoint_map.get(model_type, 'v1/completions')}"
+        model_args = f"model={model_path},base_url={base_url},{model_args_extra}"
+
+        acc_output_dir = os.path.join(output_dir, f"accuracy_eval_{task_name}.{server_idx}")
+        log_file = os.path.join(output_dir, f"accuracy_eval_{task_name}.{server_idx}.log")
+        os.makedirs(acc_output_dir, exist_ok=True)
+
+        cmd = [
+            "lm_eval",
+            "--model",
+            model_type,
+            "--tasks",
+            task_name,
+            "--model_args",
+            model_args,
+            "--log_samples",
+            "--output_path",
+            acc_output_dir,
+        ]
+        if "include_path" in extra_kwargs:
+            cmd += ["--include_path", extra_kwargs["include_path"]]
+        for k, v in extra_kwargs.items():
+            if k == "include_path":
+                continue
+            cmd += [f"--{k}"] if isinstance(v, bool) and v else [f"--{k}", str(v)]
+
+        run_env = copy.deepcopy(os.environ)
+        run_env.update({k: str(v) for k, v in env_var.items()})
+        print_info(f"[Accuracy] Running {task_name}, output: {log_file}")
+        with open(log_file, "w") as lf:
+            ret = subprocess.run(cmd, env=run_env, stdout=lf, stderr=subprocess.STDOUT)
+        print_info(f"[Accuracy] {task_name} done, exit_code={ret.returncode}")
 
 
 def parse_select_pattern(select_pattern: str) -> list:
@@ -1283,6 +1359,7 @@ class PerfSanityTestConfig:
             num_gen_servers=disagg_config.num_gen_servers,
             output_dir=output_dir,
             test_output_dir=test_output_dir,
+            model_name=disagg_config.model_name,
         )
 
     def _check_benchmark_errors(self, output: str) -> None:
