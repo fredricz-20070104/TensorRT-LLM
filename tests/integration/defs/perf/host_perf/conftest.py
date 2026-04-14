@@ -22,22 +22,6 @@ end of the test session.
 import pytest
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--host-perf",
-        action="store_true",
-        default=False,
-        help="Enable host_perf module-level tests collection. Example: pytest --host-perf",
-    )
-
-
-def pytest_collect_directory(path, parent):
-    """Only collect tests in this directory when --host-perf parameter is provided."""
-    if not parent.config.getoption("--host-perf", default=False):
-        return True
-    return None
-
-
 @pytest.fixture(scope="session", autouse=True)
 def module_perf_db_finalizer():
     """Upload accumulated module perf results to OpenSearch after all tests."""
