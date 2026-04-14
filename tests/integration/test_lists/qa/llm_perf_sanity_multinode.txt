@@ -1,0 +1,69 @@
+# Perf sanity subset for multi-node disaggregated serving
+# Covers key dimensions: model (DeepSeek-R1/Qwen3), ISL/OSL (1k1k/8k1k/128k8k),
+# backend (NIXL/UCX/Default), mode (e2e/gen_only), wideep, and accuracy.
+
+# ============================================================
+# disagg 1k1k — DeepSeek-R1 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_1k1k_ctx1_gen1_dep32_bs32_eplb0_mtp0_con1024_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_1k1k_ctx1_gen1_dep32_bs32_eplb0_mtp0_con1024_ccb-UCX]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_1k1k_ctx1_gen4_tep8_bs32_eplb0_mtp0_con16_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_1k1k_ctx1_gen4_tep8_bs32_eplb0_mtp3_con16_ccb-UCX]
+
+# ============================================================
+# disagg 1k1k — Qwen3 FP4 + FP8 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-Qwen3-235B-A22B-FP4_1k1k_ctx1_gen4_tep8_bs32_eplb0_mtp0_con16_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-Qwen3-235B-A22B-FP8_1k1k_ctx1_gen1_tep8_bs32_eplb0_mtp0_con16_ccb-UCX]
+
+# ============================================================
+# disagg 8k1k — DeepSeek-R1 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_8k1k_ctx1_gen3_tep8_bs16_eplb0_mtp3_con1_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_8k1k_ctx1_gen3_tep8_bs32_eplb0_mtp0_con16_ccb-UCX]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_8k1k_ctx6_gen1_dep16_bs64_eplb0_mtp0_con1024_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_8k1k_ctx8_gen1_dep32_bs16_eplb0_mtp3_con512_ccb-UCX]
+
+# ============================================================
+# disagg 128k8k — DeepSeek-R1 (GB200 only)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_128k8k_ctx1_pp8_gen1_tep8_bs1_eplb0_mtp3_con1-Default]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_128k8k_ctx3_pp8_gen1_dep16_bs16_eplb0_mtp0_con16-Default]
+
+# ============================================================
+# disagg 128k8k — DeepSeek-R1 (GB300 only)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_128k8k_ctx1_pp4_gen7_tep8_bs1_eplb0_mtp0_con1-Default]
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-deepseek-r1-fp4_128k8k_ctx5_pp4_gen1_dep16_bs16_eplb0_mtp0_con256-Default]
+
+# ============================================================
+# wideep gen_only — DeepSeek-R1 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_deepseek-r1-fp4_1k1k_ctx1_gen1_dep32_bs32_eplb288_mtp0_con1024_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_con2048_ccb-UCX]
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_deepseek-r1-fp4_8k1k_ctx6_gen1_dep16_bs64_eplb288_mtp0_con1024_ccb-NIXL]
+
+# ============================================================
+# wideep gen_only — DeepSeek-V32 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_deepseek-v32-fp4_1k1k_ctx1_gen1_dep32_bs32_eplb288_mtp0_con1024_ccb-NIXL]
+
+# ============================================================
+# wideep gen_only — Kimi-K2 (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_kimi-k2-thinking-fp4_1k1k_ctx3_gen1_dep32_bs1024_eplb384_mtp0_con16384_ccb-NIXL]
+
+# ============================================================
+# wideep e2e (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-wideep_deepseek-r1-fp4_8k1k_ctx2_gen1_dep32_bs128_eplb288_mtp3_con1024_ccb-DEFAULT]
+
+# ============================================================
+# accuracy (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-gen_only-wideep_accuracy-deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_ccb-NIXL]
+
+# ============================================================
+# stress (GB200 + GB300)
+# ============================================================
+perf/test_perf_sanity.py::test_e2e[disagg-e2e-wideep_stress-deepseek-r1-fp4_1k1k_ctx2_gen1_dep16_bs128_eplb288_mtp3_ccb-NIXL]
