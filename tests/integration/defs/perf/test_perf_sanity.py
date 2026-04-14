@@ -67,27 +67,50 @@ BENCH_SERVING_DIR = "/tmp/bench_serving"
 
 
 def ensure_bench_serving_repo() -> str:
-    """Clone bench_serving repo if not already present. Returns path to benchmark_serving.py."""
+    """Clone bench_serving repo if not already present. Returns path to benchmark_serving.py.
+
+    Only rank 0 (SLURM_PROCID=0) performs the clone; other ranks wait for it.
+    """
+    import time
+
     bench_script = os.path.join(BENCH_SERVING_DIR, "benchmark_serving.py")
-    if not os.path.exists(bench_script):
-        if os.path.exists(BENCH_SERVING_DIR):
-            shutil.rmtree(BENCH_SERVING_DIR)
-        subprocess.check_call(
-            ["git", "clone", "--depth", "1", BENCH_SERVING_REPO, BENCH_SERVING_DIR]
-        )
-        subprocess.check_call(
-            [
-                "git",
-                "-C",
-                BENCH_SERVING_DIR,
-                "fetch",
-                "--depth",
-                "1",
-                "origin",
-                BENCH_SERVING_COMMIT,
-            ]
-        )
-        subprocess.check_call(["git", "-C", BENCH_SERVING_DIR, "checkout", BENCH_SERVING_COMMIT])
+    ready_flag = BENCH_SERVING_DIR + ".ready"
+    rank = int(os.environ.get("SLURM_LOCALID", "0"))
+
+    if rank == 0:
+        if not os.path.exists(ready_flag):
+            if os.path.exists(BENCH_SERVING_DIR):
+                shutil.rmtree(BENCH_SERVING_DIR)
+            subprocess.check_call(
+                ["git", "clone", "--depth", "1", BENCH_SERVING_REPO, BENCH_SERVING_DIR]
+            )
+            subprocess.check_call(
+                [
+                    "git",
+                    "-C",
+                    BENCH_SERVING_DIR,
+                    "fetch",
+                    "--depth",
+                    "1",
+                    "origin",
+                    BENCH_SERVING_COMMIT,
+                ]
+            )
+            subprocess.check_call(
+                ["git", "-C", BENCH_SERVING_DIR, "checkout", BENCH_SERVING_COMMIT]
+            )
+            with open(ready_flag, "w") as f:
+                f.write("done")
+    else:
+        for _ in range(300):
+            if os.path.exists(ready_flag):
+                break
+            time.sleep(1)
+        if not os.path.exists(ready_flag):
+            raise RuntimeError(
+                f"Rank {rank}: timed out waiting for rank 0 to clone bench_serving repo"
+            )
+
     return bench_script
 
 
