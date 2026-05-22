@@ -139,6 +139,12 @@ PERF_METRIC_LOG_QUERIES = {
     "p99_e2el": re.compile(r"P99 E2EL \(ms\):\s+(-?[\d\.]+)"),
 }
 
+# Spec-decoding-only metrics: parsed from benchmark output but only stored
+# (and regression-checked) when the test runs with speculative decoding.
+SPEC_DECODING_PERF_METRIC_LOG_QUERIES = {
+    "al": re.compile(r"Mean Avg Decoded Tokens per Iter:\s+(-?[\d\.]+)"),
+}
+
 # Metrics where larger is better
 MAXIMIZE_METRICS = [
     "d_seq_throughput",
@@ -148,6 +154,7 @@ MAXIMIZE_METRICS = [
     "d_mean_tpot",
     "d_median_tpot",
     "d_p99_tpot",
+    "d_al",
 ]
 
 # Metrics where smaller is better
@@ -163,10 +170,13 @@ MINIMIZE_METRICS = [
     "d_p99_e2el",
 ]
 
-# Key metrics that determine regression (throughput metrics only)
+# Key metrics that determine regression (throughput metrics only).
+# d_al only applies to spec-decoding tests; regression for it is skipped
+# automatically when no history baseline exists.
 REGRESSION_METRICS = [
     "d_token_throughput",
     "d_total_token_throughput",
+    "d_al",
 ]
 
 
@@ -1607,8 +1617,9 @@ class PerfSanityTestConfig:
         def parse_metrics_from_output(output: str) -> Optional[Dict[str, float]]:
             """Parse all metrics from a single output string."""
             metrics = {}
+            all_queries = {**PERF_METRIC_LOG_QUERIES, **SPEC_DECODING_PERF_METRIC_LOG_QUERIES}
             for line in output.split("\n"):
-                for metric_type, regex in PERF_METRIC_LOG_QUERIES.items():
+                for metric_type, regex in all_queries.items():
                     if metric_type in metrics:
                         continue
                     match = regex.search(line)
@@ -1645,13 +1656,26 @@ class PerfSanityTestConfig:
                     f"is not equal to client number: {len(client_configs)}. "
                 )
             for client_idx, metrics in enumerate(server_perf_results):
-                if len(metrics) != len(PERF_METRIC_LOG_QUERIES):
+                missing = [k for k in PERF_METRIC_LOG_QUERIES if k not in metrics]
+                if missing:
                     error_msg += (
-                        f"Some metrics in Server {server_idx} Client {client_idx} are missing. "
-                        f"The broken metrics is {metrics}. "
+                        f"Some metrics in Server {server_idx} Client {client_idx} are missing: "
+                        f"{missing}. The parsed metrics is {metrics}. "
+                    )
+                # Spec-decoding tests must report 'Mean Avg Decoded Tokens per Iter'
+                # (parsed as 'al'). If the field is missing the test fails here so the
+                # data is never uploaded to OpenSearch.
+                if (
+                    client_idx < len(client_configs)
+                    and client_configs[client_idx].spec_decoding
+                    and "al" not in metrics
+                ):
+                    error_msg += (
+                        f"Speculative decoding test Server {server_idx} Client {client_idx} "
+                        f"is missing 'Mean Avg Decoded Tokens per Iter' in benchmark output. "
                     )
         if error_msg:
-            raise Exception(error_msg)
+            raise RuntimeError(error_msg)
 
     def upload_test_results_to_database(self):
         """Upload test results and baseline to database."""
@@ -1705,6 +1729,10 @@ class PerfSanityTestConfig:
 
                     for metric_name in PERF_METRIC_LOG_QUERIES:
                         new_data[f"d_{metric_name}"] = server_perf_results[client_idx][metric_name]
+                    # d_al is only stored for spec-decoding tests; non-spec rows omit it
+                    # so OpenSearch baselines don't blend the two populations.
+                    if client_config.spec_decoding:
+                        new_data["d_al"] = server_perf_results[client_idx]["al"]
 
                     new_data_dict[cmd_idx] = new_data
                     cmd_idx += 1
@@ -1767,6 +1795,10 @@ class PerfSanityTestConfig:
 
                     for metric_name in PERF_METRIC_LOG_QUERIES:
                         new_data[f"d_{metric_name}"] = server_perf_results[client_idx][metric_name]
+                    # d_al is only stored for spec-decoding tests; non-spec rows omit it
+                    # so OpenSearch baselines don't blend the two populations.
+                    if client_config.spec_decoding:
+                        new_data["d_al"] = server_perf_results[client_idx]["al"]
 
                     new_data_dict[cmd_idx] = new_data
                     cmd_idx += 1
