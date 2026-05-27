@@ -163,9 +163,7 @@ GEN_ONLY_PERF_METRIC_LOG_QUERIES = {
 # warmup that has not yet reached steady state. prev_device_step_time may be
 # 'N/A' (e.g. iter 1); the regex requires a numeric value so those lines do
 # not match.
-_DEVICE_STEP_TIME_RE = re.compile(
-    r"iter\s*=\s*(\d+),.*?prev_device_step_time\s*=\s*([\d.]+)\s*ms"
-)
+_DEVICE_STEP_TIME_RE = re.compile(r"iter\s*=\s*(\d+),.*?prev_device_step_time\s*=\s*([\d.]+)\s*ms")
 
 
 def gen_worker_log_sizes(output_dir: str, num_gen_servers: int) -> List[int]:
@@ -202,7 +200,10 @@ def parse_gen_worker_device_step_time(
         log_path = os.path.join(output_dir, f"gen_server_{i}.log")
         if not os.path.isfile(log_path):
             continue
-        device_step_times: List[float] = []
+        # Welford streaming mean: O(1) memory and numerically stable for
+        # large iteration counts.
+        count = 0
+        mean = 0.0
         with open(log_path) as f:
             if start_offsets is not None and i < len(start_offsets) and start_offsets[i]:
                 f.seek(start_offsets[i])
@@ -213,9 +214,10 @@ def parse_gen_worker_device_step_time(
                 iter_idx = int(m.group(1))
                 if iter_idx < 5:
                     continue
-                device_step_times.append(float(m.group(2)))
-        if device_step_times:
-            per_file_means.append(sum(device_step_times) / len(device_step_times))
+                count += 1
+                mean += (float(m.group(2)) - mean) / count
+        if count:
+            per_file_means.append(mean)
     if not per_file_means:
         return None
     return sum(per_file_means) / len(per_file_means)
@@ -1290,8 +1292,7 @@ class DisaggTestCmds(NamedTuple):
                         )
                         if device_step_time_mean is not None:
                             summary_line = (
-                                f"Average Per Iter Device Step Time (ms): "
-                                f"{device_step_time_mean}"
+                                f"Average Per Iter Device Step Time (ms): {device_step_time_mean}"
                             )
                             with open(benchmark_file_path, "a") as benchmark_ctx:
                                 benchmark_ctx.write(f"\n{summary_line}\n")

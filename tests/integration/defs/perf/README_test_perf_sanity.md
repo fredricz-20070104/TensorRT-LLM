@@ -39,9 +39,15 @@ This metric is parsed from each `gen_server_{i}.log` produced by the disagg run 
 
 The device value reported at iter `N` is the device step time of iter `N-1` (device runs async).
 
-Computation:
-1. Per file: average `prev_device_step_time` over all iters with `iter >= 5` (iters 0-4 are excluded: iter 0/1 include KV-cache transfer wait time, and iters 2-4 are warmup that has not yet reached steady state). Lines where `prev_device_step_time = N/A` (e.g. iter 1) do not match the parser and are skipped.
-2. Across files: average the per-file means → final metric value.
+**Per-client computation** (DisaggTestCmds.run_cmd, BENCHMARK branch):
+1. Immediately before launching each client, snapshot `os.path.getsize()` of every `gen_server_{i}.log`. After the client's benchmark subprocess returns, only the bytes between that snapshot and current EOF are parsed — so each client gets its own segment of gen-worker iterations rather than sharing a single global average.
+2. Per file (per segment): streaming Welford mean of `prev_device_step_time` over all iters with `iter >= 5` (iters 0-4 are excluded: iter 0/1 include KV-cache transfer wait time, and iters 2-4 are warmup that has not yet reached steady state). Lines where `prev_device_step_time = N/A` (e.g. iter 1) do not match the parser and are skipped. Welford keeps memory at O(1) and is numerically stable for arbitrarily large iteration counts.
+3. Across files: average the per-file means → per-client metric value.
+4. The per-client value is appended as the trailing line of `trtllm-benchmark.{server_idx}.{client_idx}.log`:
+   ```
+   Average Per Iter Device Step Time (ms): <value>
+   ```
+   Downstream `parse_metrics_from_output` picks it up via `GEN_ONLY_PERF_METRIC_LOG_QUERIES`.
 
 If the metric cannot be parsed for a `gen_only` run, `check_test_failure` raises `RuntimeError` and no data is uploaded.
 
