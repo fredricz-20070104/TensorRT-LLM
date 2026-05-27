@@ -145,6 +145,15 @@ SPEC_DECODING_PERF_METRIC_LOG_QUERIES = {
     "al": re.compile(r"Mean Avg Decoded Tokens per Iter:\s+(-?[\d\.]+)"),
 }
 
+# gen_only-only metric: appended to each trtllm-benchmark log by
+# DisaggTestCmds.run_cmd after parsing gen_server_*.log; only forwarded to
+# the database for gen_only mode.
+GEN_ONLY_PERF_METRIC_LOG_QUERIES = {
+    "mean_gen_worker_per_iter_device_step_time": re.compile(
+        r"Average Per Iter Device Step Time \(ms\):\s+(-?[\d\.]+)"
+    ),
+}
+
 # Per-iter prev_device_step_time logged by each gen worker. Example line:
 #   [TRT-LLM] [I] [_torch][RANK 0] iter = 5, global_rank = 0, ...,
 #   host_step_time = 6.79ms, prev_device_step_time = 6.94ms, ...
@@ -159,14 +168,34 @@ _DEVICE_STEP_TIME_RE = re.compile(
 )
 
 
+def gen_worker_log_sizes(output_dir: str, num_gen_servers: int) -> List[int]:
+    """Current byte size of each gen_server_{i}.log (0 if missing).
+
+    Used to delimit per-client segments in DisaggTestCmds.run_cmd: snapshot
+    sizes before launching a client, then pass the snapshot as start_offsets
+    to parse_gen_worker_device_step_time after the client exits.
+    """
+    sizes: List[int] = []
+    for i in range(num_gen_servers):
+        log_path = os.path.join(output_dir, f"gen_server_{i}.log")
+        sizes.append(os.path.getsize(log_path) if os.path.isfile(log_path) else 0)
+    return sizes
+
+
 def parse_gen_worker_device_step_time(
-    output_dir: str, num_gen_servers: int
+    output_dir: str,
+    num_gen_servers: int,
+    start_offsets: Optional[List[int]] = None,
 ) -> Optional[float]:
     """Mean per-iter prev_device_step_time (ms) across all gen workers.
 
     For each gen_server_{i}.log, average prev_device_step_time over iters >= 5,
     then average those per-file means across the num_gen_servers workers.
     Returns None if no usable line is found in any file.
+
+    When start_offsets is provided, only the bytes from start_offsets[i] to
+    end-of-file are considered for gen_server_{i}.log — used to slice out a
+    single client's iteration segment.
     """
     per_file_means: List[float] = []
     for i in range(num_gen_servers):
@@ -175,6 +204,8 @@ def parse_gen_worker_device_step_time(
             continue
         device_step_times: List[float] = []
         with open(log_path) as f:
+            if start_offsets is not None and i < len(start_offsets) and start_offsets[i]:
+                f.seek(start_offsets[i])
             for line in f:
                 m = _DEVICE_STEP_TIME_RE.search(line)
                 if m is None:
@@ -1235,6 +1266,12 @@ class DisaggTestCmds(NamedTuple):
                         )
                         print_info(f"Starting benchmark. cmd is {client_cmd_with_port}")
 
+                        # Snapshot gen_server log sizes so the per-client
+                        # average covers only iterations driven by this client.
+                        gen_log_start_offsets = gen_worker_log_sizes(
+                            self.output_dir, self.num_gen_servers
+                        )
+
                         output = subprocess.check_output(
                             client_cmd_with_port,
                             env=copy.deepcopy(os.environ),
@@ -1243,6 +1280,23 @@ class DisaggTestCmds(NamedTuple):
 
                         with open(benchmark_file_path, "w") as benchmark_ctx:
                             benchmark_ctx.write(output)
+
+                        # Only gen_only emits prev_device_step_time; other
+                        # modes yield None and we skip writing the line.
+                        device_step_time_mean = parse_gen_worker_device_step_time(
+                            self.output_dir,
+                            self.num_gen_servers,
+                            start_offsets=gen_log_start_offsets,
+                        )
+                        if device_step_time_mean is not None:
+                            summary_line = (
+                                f"Average Per Iter Device Step Time (ms): "
+                                f"{device_step_time_mean}"
+                            )
+                            with open(benchmark_file_path, "a") as benchmark_ctx:
+                                benchmark_ctx.write(f"\n{summary_line}\n")
+                            output = f"{output}\n{summary_line}\n"
+
                         outputs.append(output)
                     else:
                         print_info(
@@ -1829,7 +1883,11 @@ class PerfSanityTestConfig:
         def parse_metrics_from_output(output: str) -> Optional[Dict[str, float]]:
             """Parse all metrics from a single output string."""
             metrics = {}
-            all_queries = {**PERF_METRIC_LOG_QUERIES, **SPEC_DECODING_PERF_METRIC_LOG_QUERIES}
+            all_queries = {
+                **PERF_METRIC_LOG_QUERIES,
+                **SPEC_DECODING_PERF_METRIC_LOG_QUERIES,
+                **GEN_ONLY_PERF_METRIC_LOG_QUERIES,
+            }
             for line in output.split("\n"):
                 for metric_type, regex in all_queries.items():
                     if metric_type in metrics:
@@ -1864,22 +1922,6 @@ class PerfSanityTestConfig:
                 ):
                     metrics["user_throughput"] = None
                 self._perf_results[server_idx].append(metrics)
-
-            # gen_only tests: parse prev_device_step_time from gen worker logs
-            # and attach the same value to every client's metrics dict (the gen
-            # workers are shared across clients in a disagg run).
-            if self.runtime == "multi_node_disagg_server":
-                disagg_config = self.server_configs[server_idx][2]
-                if disagg_config.benchmark_mode == "gen_only":
-                    device_step_time_mean = parse_gen_worker_device_step_time(
-                        self._output_dir, disagg_config.num_gen_servers
-                    )
-                    for metrics in self._perf_results[server_idx]:
-                        if metrics is None:
-                            continue
-                        metrics["mean_gen_worker_per_iter_device_step_time"] = (
-                            device_step_time_mean
-                        )
 
     def check_test_failure(self):
         """Check if any server failed based on perf results."""
