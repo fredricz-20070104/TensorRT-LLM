@@ -23,9 +23,27 @@ For the underlying regression pipeline architecture (three-layer design, baselin
 
 | List | Count | Contents |
 |------|-------|----------|
-| `MAXIMIZE_METRICS` | 7 | Throughputs (`d_seq_throughput`, `d_token_throughput`, `d_total_token_throughput`, `d_user_throughput`) + TPOT (`d_mean_tpot`, `d_median_tpot`, `d_p99_tpot`) |
-| `MINIMIZE_METRICS` | 9 | TTFT, ITL, E2EL latencies (mean/median/P99 for each) |
-| `REGRESSION_METRICS` | 2 | `d_token_throughput`, `d_total_token_throughput` — only these gate pass/fail |
+| `MAXIMIZE_METRICS` | 8 | Throughputs (`d_seq_throughput`, `d_token_throughput`, `d_total_token_throughput`, `d_user_throughput`) + TPOT (`d_mean_tpot`, `d_median_tpot`, `d_p99_tpot`) + spec-decoding `d_al` |
+| `MINIMIZE_METRICS` | 10 | TTFT, ITL, E2EL latencies (mean/median/P99 for each) + `d_mean_gen_worker_per_iter_device_step_time` (gen_only-only) |
+| `REGRESSION_METRICS` | 2 default | `d_token_throughput`, `d_total_token_throughput` — gate pass/fail for all modes **except disagg gen_only**. `d_al` is appended at runtime when any client runs spec decoding. |
+
+**Disagg gen_only override**: For `disagg_upload-gen_only-*` tests, regression is gated **only** on `d_mean_gen_worker_per_iter_device_step_time`. Token-based throughput numbers are dominated by KV-cache transfer time in gen_only mode and are not a useful regression signal there.
+
+#### `d_mean_gen_worker_per_iter_device_step_time` (gen_only only)
+
+This metric is parsed from each `gen_server_{i}.log` produced by the disagg run (one per gen worker, in the run's `output_dir`). Lines look like:
+
+```
+[TRT-LLM] [I] [_torch][RANK 0] iter = 5, ..., host_step_time = 6.79ms, prev_device_step_time = 6.94ms, ...
+```
+
+The device value reported at iter `N` is the device step time of iter `N-1` (device runs async).
+
+Computation:
+1. Per file: average `prev_device_step_time` over all iters with `iter >= 5` (iters 0-4 are excluded: iter 0/1 include KV-cache transfer wait time, and iters 2-4 are warmup that has not yet reached steady state). Lines where `prev_device_step_time = N/A` (e.g. iter 1) do not match the parser and are skipped.
+2. Across files: average the per-file means → final metric value.
+
+If the metric cannot be parsed for a `gen_only` run, `check_test_failure` raises `RuntimeError` and no data is uploaded.
 
 ### Match Keys
 
