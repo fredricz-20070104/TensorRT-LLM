@@ -611,6 +611,10 @@ class AccuracyConfig:
     def from_dict(cls, data: Optional[dict]) -> Optional["AccuracyConfig"]:
         if not data:
             return None
+        # Short-circuit when accuracy is disabled so we don't try to parse
+        # legacy-shape `tasks:` (a string instead of the expected dict).
+        if not bool(data.get("enable_accuracy_test", False)):
+            return None
         return cls(data)
 
     def build_lm_eval_invocations(
@@ -1003,7 +1007,11 @@ class AggrTestCmds(NamedTuple):
                     )
                     outputs.append("")
 
-                if client_config and client_config.accuracy_config:
+                if (
+                    client_config
+                    and client_config.accuracy_config
+                    and client_config.accuracy_config.enable_accuracy_test
+                ):
                     client_config.accuracy_config.run(
                         model_name=self.model_name or client_config.model_name,
                         server_hostname=server_hostname,
