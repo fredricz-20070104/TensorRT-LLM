@@ -97,8 +97,7 @@ worker_config:
       free_gpu_memory_fraction: 0.9
       dtype: fp8
     moe_config:
-      backend: CUTEDSL
-      use_low_precision_moe_combine: true
+      backend: TRTLLM
     cache_transceiver_config:
       max_tokens_in_buffer: 8448
       backend: NIXL
