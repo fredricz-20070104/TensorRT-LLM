@@ -118,6 +118,184 @@ else:
 
 **问题就在这里**：测试默认带 `--no-test-input`（[test_perf_sanity.py:938](tests/integration/defs/perf/test_perf_sanity.py#L938)），**关掉了 warmup**。于是这笔冷启动开销被算进了正式统计的 `dur_s` 里 → 这是抖动的最大来源（对应 md 文档方案 1）。
 
+### 补充 2.1：1/2/3/4 四项冷启动开销，逐条拆解它们到底在干什么
+
+> **先说一个关键前提（这也是对上面那段的修正）**
+>
+> TRT-LLM 引擎**自己就有一套完整的 warmup**，跑在 `ModelEngine.warmup()` 里
+> （[model_engine.py:1106-1210](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1106-L1210)），
+> 由 `PyExecutor` 在**创建执行器时**调用（[py_executor.py:804-815](tensorrt_llm/_torch/pyexecutor/py_executor.py#L804-L815)）。
+>
+> 而 perf 测试是**等 `/health` 返回 200 才开始打请求**的
+> （[test_perf_sanity.py:1096-1097](tests/integration/defs/perf/test_perf_sanity.py#L1096-L1097)、
+> [1399-1400](tests/integration/defs/perf/test_perf_sanity.py#L1399-L1400)），
+> 而 health 要求 coordinator `is_ready()`（[openai_disagg_server.py:314-315](tensorrt_llm/serve/openai_disagg_server.py#L314-L315)），
+> 也就是 ctx/gen worker 全部注册完 —— 那时引擎 warmup **早就跑完了**。
+>
+> 所以下面 4 条里，**1、2、4 绝大部分是在 server 启动阶段就付掉的，根本落不到第一发请求上**；
+> 真正 100% 落在第一发请求上的只有 **3（NIXL/UCX 建链）**，外加 1/2/4 的**残留部分**（引擎 warmup 没覆盖到的形状/路径）。
+> 这直接影响对"方案 1（client warmup）"收益的预期 —— 见本节末尾的结论表。
+
+---
+
+#### 1. CUDA graph capture —— 在干什么
+
+**CUDA graph 是什么**：一次 decode step 要 launch 几百个 kernel（attention、GEMM、norm、allreduce…），每个 `cudaLaunchKernel` 的 **CPU 侧**开销约 5~10 μs。几百个叠起来就是几 ms 的纯 CPU 时间。decode step 本身 GPU 只跑 ~10 ms，这几 ms 的 launch 开销占比极高，而且是 **CPU 喂不饱 GPU** 的典型形态。
+
+CUDA graph 把"这一串 kernel launch 的 DAG"**录下来变成一个对象**，之后每步只 launch 这一个 graph → 几百次 launch 塌缩成 1 次，CPU 开销几乎归零。
+
+**capture（录制）为什么慢**：看 [cuda_graph_runner.py:400-483](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L400-L483)，一次 capture 要做三件事：
+
+1. **先跑 `WARMUP_STEPS` 次真实 forward**（[L459-465](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L459-L465)）——PyTorch 官方要求，用来初始化内部状态、把 attention workspace 撑到最终大小；
+2. **在 `torch.cuda.graph(...)` 上下文里再跑一遍 forward**（[L470-473](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L470-L473)），这一遍不真执行、只录制；
+3. 把 **input/output 张量地址烤死进 graph** —— 所以必须用 `shared_static_tensors` 这种固定地址的静态 buffer（[L158-180](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L158-L180)），replay 时是 `copy_` 把新数据拷进这块固定 buffer（[L494-505](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L494-L505)），而不是换指针。
+
+**关键：一个 shape 一张图**。graph key 是 `(batch_size, draft_len, is_first_draft, …)`（[get_graph_key L231+](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L231)）。所以引擎要为 `cuda_graph_batch_sizes` 里每个 bs × 每个 draft_len × 每个 max_seq_len 各录一张。这就是启动要花几十秒的原因。
+
+**引擎在哪里付掉的**（[model_engine.py:1179-1192](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1179-L1192)）——注意是**跑两遍**：
+
+```python
+with self.cuda_graph_runner.allow_capture():
+    self.cuda_graph_runner.is_warmup_only = True
+    self._run_cuda_graph_warmup(resource_manager)   # 第 1 遍：只 forward 不 capture
+    self.cuda_graph_runner.is_warmup_only = False   #        目的是把 workspace 撑到最大
+    self._run_cuda_graph_warmup(resource_manager)   # 第 2 遍：真正 capture
+```
+
+为什么要两遍？注释写得很清楚：attention kernel 在小 batch 下会**切换实现**并要更大的 workspace，如果边 capture 边 resize workspace，**已经录好的图里烤死的地址就失效了**。所以第一遍把所有 shape 都跑一遍、把 workspace 顶到最大，第二遍再录。
+
+**残留到运行时的是什么**：注意 `_capture_allowed` **默认是 `False`**（[L152-155](tensorrt_llm/_torch/pyexecutor/cuda_graph_runner.py#L152-L155)），只有 `allow_capture()` 上下文里才为真。所以运行时遇到**没录过的 shape**：
+
+```python
+# maybe_get_cuda_graph, L352-355
+if not self._capture_allowed:
+    return None, None, None      # ← 直接退回 eager，不会现场 capture
+```
+
+> **这条很重要**：现在的 TRT-LLM **运行时不会做 on-the-fly capture**，所以"第一发请求触发 graph capture 卡几百 ms"这个说法在当前代码上**不成立**。
+> 真正会发生的是 **eager fallback** —— 那一步退回逐 kernel launch，慢个 20~50%，就是问题 6 里说的那种"尖刺"。
+> 这也解释了为什么 `prev_device_step_time` 偶尔会蹦高：不是 capture，是**没命中 graph 而走了 eager**。
+>
+> （padding 机制会把 batch size 向上取整到某个已录的桶，见 `cuda_graph_padding_enabled`，用来提高命中率。）
+
+---
+
+#### 2. 首个 KV cache block 分配 —— 在干什么
+
+**先纠正一个直觉**：KV cache 的显存**不是**按请求逐块 `cudaMalloc` 的。看 [resource_manager.py:641-648](tensorrt_llm/_torch/pyexecutor/resource_manager.py#L641-L648)：
+
+```python
+self.impl = KVCacheManagerCpp(**kwargs)
+...
+self.impl.allocate_pools(False)          # ← 在 __init__ 里一次性把整个 pool 显存吃掉
+self.kv_cache_pool_pointers = self.impl.get_block_pool_pointers()
+```
+
+`allocate_pools` 在 **KVCacheManager 构造时**就把 `free_gpu_memory_fraction` 那一大坨显存整个 malloc 成 pool。之后每个请求拿的"block"只是**在这块已分配的大内存里划一段偏移**，是纯 CPU 侧的 block table 记账，不涉及显存分配。
+
+**那"首次触碰"的开销到底是什么**，实际是这几样：
+
+- **物理页首次落地（first touch）**：`cudaMalloc` 拿到的是虚拟地址，物理页在**第一次写入时**才真正 backing。第一发请求写到从没碰过的 block 区间时会有一次页面开销。
+- **PyTorch caching allocator 为「激活值」扩容**：KV pool 是 C++ 侧的，但 forward 过程中的中间激活张量走 PyTorch 的 caching allocator。第一次遇到某个新 size，allocator 要 `cudaMalloc` 新 segment（同步操作，会 stall），之后才复用缓存。
+- **碎片**：新 segment 落在零散位置，后续大张量分配可能触发 `cudaFree` + 重新 malloc。
+
+**引擎在哪里付掉的**（[model_engine.py:1204-1210](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1204-L1210)）：
+
+```python
+if can_run_general_warmup:
+    # Pre-populate the memory pool with max-shape allocations to reduce
+    # fragmentation at runtime.
+    warmup_requests_configs = self._get_max_shape_warmup_requests(resource_manager)
+    self._general_warmup(resource_manager, warmup_requests_configs)
+```
+
+warmup **最后一步**专门用**最大 shape**的请求跑一遍，目的就是让 caching allocator 一次性把最大的那些 segment 都分配好、缓存住。之后运行时任何更小的 shape 都能从缓存里切，不再 `cudaMalloc`。
+
+另外 warmup 中途还刻意 `gc.collect() + torch.cuda.empty_cache()` 两次（[L1156-1159](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1156-L1159)、[L1177-1178](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1177-L1178)），把 autotuner 探索期的临时 buffer 还回去——注释说这些残留会"藏起几十 GiB，让非 torch 的分配器（cuBLAS workspace、**UCX/NIXL**、NVSHMEM）拿不到显存"。**这一条直接关联第 3 项**：显存没让出来，NIXL 注册内存就会失败或变慢。
+
+---
+
+#### 3. disagg KV transfer 建链 —— 你已经大致了解，补一下代码落点
+
+第一次某个 ctx worker 要往某个 gen worker 送 KV 时，才会走
+[agent_utils/connection.cpp:679-731](cpp/tensorrt_llm/executor/cache_transmission/agent_utils/connection.cpp#L679-L731) 的 `AgentConnectionManager::connect()`：
+
+```cpp
+m_Agent->loadRemoteAgent(remoteAgentName, AgentDesc{metadata.value()});
+...
+auto connection = std::make_shared<AgentConnection>(mAgentName, remoteAgentName, this);
+mConnections[remoteAgentName] = connection;      // ← 缓存住，之后同一对 peer 直接复用
+```
+
+`loadRemoteAgent` 干的是：交换 agent metadata、注册内存描述符（RDMA memory registration）、建立 QP。**这是真正 lazy 的**——引擎 warmup 阶段没有真实的跨 worker 请求，所以建不了链，只能等第一发真请求。
+
+`mConnections` 是个 map，建过一次就缓存，**所以这笔开销只在第一发（每个 ctx↔gen 配对的第一发）出现**。这也是为什么 client 侧 warmup（`--no-test-input` 那一发）**对这一项是真的有用**——它是四条里唯一一条 client warmup 能实打实吃掉的。
+
+---
+
+#### 4. 调度器首次排队 / JIT / autotune —— 在干什么
+
+这一条其实是三个不同的东西被打包在一起了，拆开看：
+
+**(a) Autotune** —— [model_engine.py:1464-1484](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1464-L1484)
+
+```python
+def _run_autotuner_warmup(self, resource_manager):
+    """Runs a forward pass to populate the autotuner cache."""
+    if not self.llm_args.enable_autotuner:
+        return
+    ...
+    with self.no_cuda_graph(), autotune(cache_path=cache_path):
+        warmup_request = self._create_warmup_request(resource_manager, curr_max_num_tokens, 0)
+```
+
+autotuner 干的是：同一个算子（GEMM、MoE、attention）往往有多个 kernel/tactic 实现，autotuner 在 `autotune()` 上下文里**把每个候选都真跑一遍计时**，选最快的存进 cache（`AutoTuner.choose_one`，[autotuner.py:997](tensorrt_llm/_torch/autotuner.py#L997)）。这是"探索"，很贵，所以必须在 warmup 里做完。**已经在启动时付掉。**
+
+**(b) JIT 编译** —— 这条是**最阴险的**，看 [model_engine.py:1193-1211](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1193-L1211) 那段注释：
+
+> deep_gemm's Python-side JIT compiles a fresh cubin (spawning nvcc/cicc/ptxas, **~3s on GB300**) the first time each `aligned_bs` is requested. CUDA-graph warmup exercises only the batch sizes in `cuda_graph_batch_sizes`, which round up to a subset of the 32-aligned buckets; **every uncovered bucket that the inference workload later touches produces a 3s stall on that iteration.**
+
+翻译一下：DSA 模型每个 iter 都会调 `deep_gemm.get_paged_mqa_logits_metadata`，这个 kernel 按 `align(batch_size, 32)` 模板化。**每碰到一个新的 32 对齐桶，就现场调 nvcc 编译一次，GB300 上卡 3 秒。** 3 秒！对一个稳态 10ms 的 step 来说这是 300 倍的尖刺。
+
+所以代码专门加了 `_warmup_dg_paged_mqa_logits_metadata()`，把**所有**可能的 bucket 都预先 touch 一遍，把编译成本全部赶进 warmup。同理还有 `_run_mamba_hybrid_warmup`（预 JIT Mamba 的 Triton kernel，[L1166-1171](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1166-L1171)）。
+
+> **这就是你的 perf 数字里那种"偶发巨大尖刺"最可能的来源**：不是 CUDA graph capture，是某个 shape/bucket 第一次被碰到时的 **JIT 编译**。而且它**不一定发生在第一发请求**——只要 workload 后期走到一个 warmup 没覆盖的桶，那一 iter 就卡 3s。这是纯 mean 聚合（问题 6）最怕的那种离群点。
+
+**(c) torch.compile 首次特化** —— [model_engine.py:1145-1151](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1145-L1151)
+
+```python
+# Specialize torch.compile graphs across the key input shapes before CUDA graph capture.
+warmup_requests_configs = self._get_full_general_warmup_requests(resource_manager)
+with self.no_cuda_graph():
+    self._general_warmup(resource_manager, warmup_requests_configs)
+```
+
+torch.compile 对每个新的输入 shape 会**重新 trace + 编译**（recompilation）。`_general_warmup` 把关键 shape 都跑一遍，让 Dynamo 先特化完。运行时碰到没特化过的 shape → 触发一次 recompile，同样是几百 ms 到数秒的 stall。
+
+**(d) "调度器首次排队"** —— 这一项原文写得比较模糊，实际上没有什么"调度器 lazy init"。真正在第一发请求上的调度侧开销是：请求第一次进队列时各种 Python 对象/buffer 的首次分配、tokenizer 首次调用（HF tokenizer 第一次 encode 要初始化 Rust 后端）、HTTP 侧 TCP 连接池/SSL 首次握手。这些量级在 **ms** 级，相比 (b) 的秒级完全不是一个数量级。
+
+---
+
+#### 结论表：这 4 条到底谁会落到"第一发请求"上
+
+| # | 项目 | 引擎 warmup 是否已付 | 残留到运行时的部分 | client warmup（去掉 `--no-test-input`）能否吃掉 |
+|---|---|---|---|---|
+| 1 | CUDA graph capture | ✅ 启动时全部 capture 完（[L1184-1191](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1184-L1191)） | 未录 shape → **eager fallback**（不是 capture） | ❌ 无关。运行时本来就不 capture |
+| 2 | KV block / 显存分配 | ✅ pool 启动即分配（[L646](tensorrt_llm/_torch/pyexecutor/resource_manager.py#L646)）+ max-shape 预填（[L1204-1210](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1204-L1210)） | 物理页 first-touch、少量 allocator 扩容（ms 级） | 🟡 少量 |
+| 3 | **NIXL/UCX 建链** | ❌ **完全没付**（warmup 无跨 worker 真请求） | **全部**：agent metadata 交换 + 内存注册 + QP 建立 | ✅ **能，这是主要收益** |
+| 4a | Autotune | ✅ 启动时跑完（[L1464](tensorrt_llm/_torch/pyexecutor/model_engine.py#L1464)） | 基本无 | ❌ 无关 |
+| 4b | **JIT（DeepGEMM/Triton）** | 🟡 已覆盖的 bucket 付了 | **未覆盖 bucket → 每次首触 ~3s stall**，且**不限于第一发** | ❌ 吃不掉——它可能在第 7 个请求才爆 |
+| 4c | torch.compile 特化 | ✅ `_general_warmup` 覆盖关键 shape | 未覆盖 shape → recompile stall | 🟡 少量 |
+| 4d | 调度/tokenizer/HTTP | ❌ 没付 | 首次队列对象、tokenizer 初始化、TCP 握手（ms 级） | ✅ 能，但量级小 |
+
+**对优化方案的直接影响（这是这一节最该带走的东西）：**
+
+1. **方案 1（去掉 `--no-test-input`）的收益，主要来自第 3 项建链 + 第 4d 项，而不是 graph capture。** 原文把 capture 列为首要收益是不准确的。收益仍然存在（建链在 disagg 里可以是几十到几百 ms），但别期待它能治好所有抖动。
+2. **真正的"大尖刺"元凶更可能是 4b 的 JIT**，而它**不服从"只在第一发出现"的假设**——所以 warmup 治不了它，只能靠：
+   - 确认 `_warmup_dg_paged_mqa_logits_metadata` 这类预 touch 覆盖全（DSA / DeepSeek 系模型尤其要看）；
+   - 聚合侧用 **median / trimmed-mean**（方案 4）把这种秒级离群点掐掉。
+3. **1 的 eager fallback** 会让 `prev_device_step_time` 系统性偏高而非单点尖刺 —— 如果发现某个 case 的 step time 整体偏高，值得先查 batch size 有没有落在 `cuda_graph_batch_sizes` 的桶里（padding 是否生效），而不是先怀疑 kernel 回归。
+
 ---
 
 ## 问题 3：降噪聚合的实现原理（`test_perf_sanity.py:172-315`），用数字讲
