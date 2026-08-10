@@ -781,6 +781,7 @@ class Runner:
         kv_cache_dtype,
         mamba_ssm_cache_dtype,
         layer_indices,
+        is_gen=False,
     ):
         # Please refer to `tensorrt_llm/_torch/pyexecutor/py_executor_creator.py` for `tokens_per_block`
         model_config = ModelConfig.from_pretrained(pretrained_model_name_or_path)
@@ -792,7 +793,10 @@ class Runner:
         # Please refer to `tensorrt_llm/_torch/pyexecutor/_util.py` for `kv_cache_manager`
         config = model_config.pretrained_config
         kv_cache_config = KvCacheConfig(
-            max_tokens=max_batch_size * round_up(max_seq_len, tokens_per_block),
+            # `add_dummy_requests(is_gen=True)` resizes each request once more, to
+            # `capacity + kv_reserve_draft_tokens + 1`, so the budget needs room for
+            # that extra decode token or the last block rounds down.
+            max_tokens=max_batch_size * round_up(max_seq_len + 1, tokens_per_block),
             enable_block_reuse=False,
         )
         kv_cache_manager_cls = get_kv_cache_manager_cls(model_config, kv_cache_config)
@@ -896,8 +900,33 @@ class Runner:
             )
         else:
             raise NotImplementedError("Unsupported config")
-        kv_cache_manager.add_dummy_requests(
-            list(range(max_batch_size)), token_nums=[max_seq_len] * max_batch_size
+        # `is_gen` is what tells the manager these are decode requests that already
+        # hold `token_num - 1` tokens of history. It is not a hint -- it selects a
+        # different reservation on every sliding-window pool. A request registered
+        # without it is a fresh context and reserves its full length there, while
+        # the pool solver only ever budgets one such request per step (see
+        # `KVCacheManagerV2._build_general_cache_config`, whose typical step is one
+        # context plus `max_batch_size - 1` generation requests).
+        #
+        # For a single-pool model the difference is invisible: the quota is
+        # fungible, so over-reserving one pool costs nothing. DeepSeek-V4 gives
+        # every layer a sliding-window pool with `window_size` tokens (128 by
+        # default), so at `max_seq_len` 1151 a context request reserves ~9x what a
+        # generation request does, and registering `max_batch_size` of them
+        # over-subscribes those pools by the same factor. `resize()` then fails,
+        # `add_dummy_requests` unwinds the whole batch and returns None, and the
+        # miss only surfaces later as "Request ID not found in IndexMapper" from
+        # the C++ IndexMapper -- two call layers away from the cause.
+        requests = kv_cache_manager.add_dummy_requests(
+            list(range(max_batch_size)),
+            token_nums=[max_seq_len] * max_batch_size,
+            is_gen=is_gen,
+        )
+        assert requests is not None and len(requests) == max_batch_size, (
+            f"kv cache manager admitted {0 if requests is None else len(requests)} of "
+            f"{max_batch_size} dummy requests at max_seq_len={max_seq_len}. "
+            "add_dummy_requests() frees every request it already registered before "
+            "returning None, so continuing here leaves an empty IndexMapper."
         )
         return kv_cache_manager
 

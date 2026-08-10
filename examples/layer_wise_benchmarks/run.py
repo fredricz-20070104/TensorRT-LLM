@@ -164,6 +164,10 @@ kv_cache_manager = Runner.create_kv_cache_manager(
     kv_cache_dtype=args.kv_cache_dtype,
     mamba_ssm_cache_dtype=args.mamba_ssm_cache_dtype,
     layer_indices=args.layer_indices,
+    # A GEN benchmark replays decode steps, so every dummy request already holds
+    # seq_len_kv_cache tokens of history. Registering them as fresh contexts makes
+    # sliding-window pools reserve the full sequence for each one instead.
+    is_gen=args.run_type == "GEN",
 )
 attn_workspace = torch.empty((0,), device="cuda", dtype=torch.int8)
 logger.info("Layer-wise benchmarks: Create KV cache manager  ... Done")
