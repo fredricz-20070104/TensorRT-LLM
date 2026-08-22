@@ -1,0 +1,9 @@
+{
+  "upstream_commit": "c54538b05f4f0413ba470ce6f85959e1b3367a47",
+  "upstream_commit_short8": "c54538b0",
+  "upstream_commit_time_sht": "2026-07-22 16:34:01",
+  "branch": "commit-c54538-20260722-163401",
+  "leg": "gvr_old",
+  "backported_from": "9cc292ce00",
+  "note": "HEAD is a test-definition patch; the commit actually measured is upstream_commit. Perf rows must be filed under it or they cannot be joined to the layer-wise rows from the same build."
+}
