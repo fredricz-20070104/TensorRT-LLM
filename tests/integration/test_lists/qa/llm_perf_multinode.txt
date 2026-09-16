@@ -86,7 +86,8 @@ perf/test_perf_sanity.py::test_e2e[disagg-e2e-gb300_wideep_deepseek-r1-fp4_8k1k_
 perf/test_perf_sanity.py::test_e2e[disagg-e2e-gb200_wideep_stress-deepseek-r1-fp4_8k1k_ctx2_gen1_dep32_bs128_eplb288_mtp3_ccb-NIXL]
 perf/test_perf_sanity.py::test_e2e[disagg-e2e-gb200_stress-gpt-oss-120b-fp4_8k1k_ctx1_tp1_gen1_tp4_eplb0_eagle3_ccb-NIXL]
 
-# aggregated multi-node (ctx_only and gen_only reuse disagg config yamls)
+# aggregated multi-node (ctx_only, gen_only and gen_only_no_context reuse disagg
+# config yamls)
 
 # ctx_only
 perf/test_perf_sanity.py::test_e2e[aggr-ctx_only-gb200_deepseek-r1-fp4_128k8k_con1_ctx1_pp8_gen1_tep8_eplb0_mtp3_ccb-NIXL]
@@ -99,8 +100,18 @@ perf/test_perf_sanity.py::test_e2e[aggr-ctx_only-gb300_kimi-k25-thinking-fp4_8k1
 perf/test_perf_sanity.py::test_e2e[aggr-ctx_only-gb300_kimi-k25-thinking-fp4_8k1k_con4_ctx1_dep4_gen1_tep8_eplb0_mtp3_ccb-NIXL]
 
 # gen_only
-perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb200_deepseek-r1-fp4_8k1k_con1_ctx1_dep4_gen1_tep8_eplb0_mtp3_ccb-NIXL]
-perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb200_gpt-oss-120b-fp4_8k1k_con4_ctx1_tp1_gen1_tp4_eplb0_mtp0_ccb-NIXL]
+#
+# Kept on gen_only rather than moved to gen_only_no_context below. The two modes
+# are not interchangeable per case -- #19107 measured a per-case gap of -37% to
+# +13% -- so a case only moves once its own gap is known and small. These are the
+# ones where it is not:
+#   glm-5 con1024   measured, but 12.68% peak-to-peak over 4 reps (its Delta
+#                   ranges +0.47..+13.23%), i.e. too noisy to gate a regression on.
+#   kimi-k25 (x4)   never measured in either arm by #19107.
+#   wideep          never measured; also 8-node gen worker, where #19107 saw a
+#                   20.4% Slurm-startup retry rate against 0% single-node.
+# The saving these would buy is small anyway: every one is ctx1 with a 4-GPU ctx
+# worker, so dropping the ctx fleet is -11%..-20% of nodes, not the -86% headline.
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb200_kimi-k25-thinking-fp4_8k1k_con4096_ctx1_dep4_gen1_dep16_eplb0_mtp0_ccb-NIXL]
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb200_wideep_deepseek-r1-fp4_8k1k_ctx2_gen1_dep32_bs128_eplb288_mtp3_con1024_ccb-NIXL]
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb300_glm-5-fp4_8k1k_con1024_ctx1_dep2_gen1_dep8_eplb256_mtp1_ccb-NIXL]
@@ -108,3 +119,39 @@ perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb200_kimi-k25-thinking-fp4_8
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb300_kimi-k25-thinking-fp4_8k1k_con1024_ctx1_dep4_gen1_dep32_eplb416_mtp3_ccb-NIXL]
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb300_kimi-k25-thinking-fp4_8k1k_con4096_ctx1_dep4_gen1_dep16_eplb0_mtp0_ccb-NIXL]
 perf/test_perf_sanity.py::test_e2e[disagg-gen_only-gb300_kimi-k25-thinking-fp4_8k1k_con4_ctx1_dep4_gen1_tep8_eplb0_mtp3_ccb-NIXL]
+
+# gen_only_no_context
+#
+# Same decode-loop measurement as gen_only, but the gen worker fabricates its own
+# KV blocks, so no ctx fleet is allocated at all. aggr- prefix, not disagg-: the
+# prefix names the launch path, and this mode runs one pytest that owns the gen
+# worker, the proxy and the client -- the same single-pytest path ctx_only takes
+# out of a disaggregated yaml. The yaml is unchanged and shared with the disagg
+# ids; num_ctx_servers/num_gen_servers are overridden to (0, 1) by the mode.
+#
+# Losing gen_only's ctx fleet does NOT lose cache-transceiver coverage here: every
+# config below also runs disagg-e2e- in this same list, and e2e is what exercises
+# the KV transfer. What gen_only adds over gen_only_no_context is real KV arriving
+# at the gen worker, which e2e already covers for these configs.
+#
+# NOTE: baselines do not carry over. s_benchmark_mode is an OpenSearch match key,
+# so a case that moves here starts a fresh baseline lineage and its decode metric
+# is un-gated until enough history accumulates (<2 versions reports
+# `insufficient`). That is the price of the move, and the reason the list above is
+# not emptied wholesale.
+
+# Moved off gen_only: measured by #19107, gap robust in sign and magnitude across
+# 4 reps, and cheap-and-stable in the regime that matters.
+#   gpt-oss con4    2 -> 1 nodes; Delta -8.58%; 1.26% spread; single-node gen
+#                   worker, the regime with 0 of 45 startup retries.
+#   deepseek-r1 con1 3 -> 2 nodes; Delta -6.21%; 1.12% spread.
+perf/test_perf_sanity.py::test_e2e[aggr-gen_only_no_context-gb200_gpt-oss-120b-fp4_8k1k_con4_ctx1_tp1_gen1_tp4_eplb0_mtp0_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[aggr-gen_only_no_context-gb200_deepseek-r1-fp4_8k1k_con1_ctx1_dep4_gen1_tep8_eplb0_mtp3_ccb-NIXL]
+
+# New decode-side coverage, not a move -- these two model families have no
+# decode-isolated lane in this list today, and gen_only would have cost 6 and 3
+# nodes. Both collapse to a single node here because the mode samples one replica
+# of a replicated gen fleet (gen5 / gen2), which is what #19107's second commit
+# enabled.
+perf/test_perf_sanity.py::test_e2e[aggr-gen_only_no_context-gb300_deepseek-v4-pro-fp4_8k1k_con2_ctx1_dep4_gen5_tep4_eplb0_mtp3_ccb-NIXL]
+perf/test_perf_sanity.py::test_e2e[aggr-gen_only_no_context-gb300_minimax-m3-fp4_8k1k_con30_ctx1_tp4_gen2_tp4_eplb0_eagle3_ccb-NIXL]
