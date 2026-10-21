@@ -9,3 +9,5 @@ def arithmetic_mean(values):
 def first_item(values):
     """Return the first item, or None when the list is empty."""
     return values[0]
+
+# Combined review workflow acceptance.
